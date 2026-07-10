@@ -342,6 +342,28 @@ let currentUser = JSON.parse(localStorage.getItem('ke_user') || 'null');
 let currentEmailId = null;
 let activeCharts = [];
 
+const urlParams = new URLSearchParams(window.location.search);
+
+if (urlParams.get('google_login') === 'success') {
+  const connectedEmail = urlParams.get('email') || '';
+
+  token = 'google-connected';
+
+  currentUser = {
+    name: connectedEmail
+      ? connectedEmail.split('@')[0]
+      : 'Kishor Exports',
+    email: connectedEmail,
+    account_email: connectedEmail,
+    role: 'senior_manager'
+  };
+
+  localStorage.setItem('ke_token', token);
+  localStorage.setItem('ke_user', JSON.stringify(currentUser));
+
+  window.history.replaceState({}, document.title, '/');
+}
+
 function signInWithGoogle() { window.location.href = '/auth/google'; }
 
 async function doLogin() {
@@ -383,7 +405,10 @@ async function initApp() {
 }
 
 async function checkGmailStatus() {
-  const data = await apiFetch('/api/gmail/status');
+  const email = currentUser?.account_email || '';
+  const data = await apiFetch(
+    `/api/gmail/status?email=${encodeURIComponent(email)}`
+  );
   const banner = document.getElementById('gmailBanner');
   if (!data) return;
   if (data.connected) {
