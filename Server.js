@@ -11,6 +11,25 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 app.use(express.json());
 
+// === 15 TRACKED SENDERS ONLY ===
+const TRACKED = new Set([
+  'nirvana.balsingh@wefashion.com',
+  'ilona.van.de.schootbrugge@wefashion.com',
+  'kurt@kurtklingberg.se',
+  'cg@carebyme.dk',
+  'ivy.ho@polarnopyret.se',
+  'jo@lakor.dk',
+  'stine@lakor.dk',
+  'johnny.lai@polarnopyret.se',
+  'rishabh.shrivastava@ul.com',
+  'jeppe@lakor.dk',
+  'fiona@littleones.ie',
+  'mg@carebyme.dk',
+  'bettina@gai-lisva.com',
+  'camillad@luxkids.dk',
+  'emma@emmamalena.com'
+].map(e => e.toLowerCase()));
+
 // === UTILITY FUNCTIONS ===
 
 function getHeader(headers, name) {
@@ -31,7 +50,7 @@ async function saveToken(email, tokens) {
   await supabase.from('users').update({ gmail_token: JSON.stringify(tokens) }).eq('account_email', email);
 }
 
-// === FETCH ALL EMAILS ===
+// === FETCH EMAILS - ONLY FROM 15 TRACKED SENDERS ===
 async function fetchAllEmails(email) {
   const tokens = await getToken(email);
   if (!tokens) return 0;
@@ -43,19 +62,25 @@ async function fetchAllEmails(email) {
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
   try {
+    // === HARD LIMIT: LAST 5 DAYS ONLY ===
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
     const afterDate = fiveDaysAgo.toISOString().split('T')[0];
     const query = `in:inbox after:${afterDate}`;
 
-    console.log(`[Gmail] Fetching from ${afterDate}...`);
+    console.log(`[Gmail] Fetching from ${afterDate} (5 days) - TRACKED SENDERS ONLY`);
 
     const { data: messages_result } = await gmail.users.messages.list({ userId: 'me', q: query, maxResults: 500 });
     const messages = messages_result?.messages || [];
 
-    if (!messages.length) return 0;
+    if (!messages.length) {
+      console.log(`[Gmail] No emails found`);
+      return 0;
+    }
 
     let saved = 0;
+    let skipped = 0;
+    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
 
     for (const msg of messages) {
       const { data: exists } = await supabase.from('emails').select('id').eq('email_id', msg.id).single();
@@ -68,10 +93,27 @@ async function fetchAllEmails(email) {
       const receivedAtRaw = getHeader(headers, 'Date');
       const receivedAt = new Date(receivedAtRaw || Date.now()).toISOString();
 
+      // === EXTRACT SENDER EMAIL ===
       const match = fromHeader.match(/<(.+?)>/);
-      const senderEmail = match ? match[1].toLowerCase() : fromHeader.toLowerCase();
+      let senderEmail = match ? match[1].toLowerCase().trim() : fromHeader.toLowerCase().trim();
+
+      // === CHECK IF SENDER IS TRACKED ===
+      if (!TRACKED.has(senderEmail)) {
+        skipped++;
+        continue;
+      }
+
+      // === DOUBLE CHECK: EMAIL IS WITHIN 5 DAYS ===
+      const emailTimeMs = new Date(receivedAt).getTime();
+      const nowMs = Date.now();
+      if ((nowMs - emailTimeMs) > fiveDaysMs) {
+        skipped++;
+        console.log(`[Gmail] SKIP (too old): ${senderEmail}`);
+        continue;
+      }
 
       saved++;
+      console.log(`[Gmail] SAVE: ${senderEmail}`);
 
       await supabase.from('emails').insert({
         email_id: msg.id,
@@ -87,7 +129,7 @@ async function fetchAllEmails(email) {
       });
     }
 
-    console.log(`[Gmail] Saved ${saved} emails`);
+    console.log(`[Gmail] SAVED: ${saved} | SKIPPED: ${skipped}`);
     return saved;
 
   } catch (err) {
@@ -107,9 +149,12 @@ async function checkForReplies(email) {
 
   try {
     const { data: unreplied } = await supabase.from('emails').select('id, thread_id, received_at').eq('status', 'unreplied');
-    if (!unreplied?.length) return;
+    if (!unreplied?.length) {
+      console.log(`[Gmail] No unreplied emails to check`);
+      return;
+    }
 
-    console.log(`[Gmail] Checking ${unreplied.length} unreplied emails...`);
+    console.log(`[Gmail] Checking ${unreplied.length} unreplied emails for replies...`);
 
     let updated = 0;
 
@@ -130,6 +175,7 @@ async function checkForReplies(email) {
         if (hasReply) {
           await supabase.from('emails').update({ status: 'replied', replied_at: new Date().toISOString() }).eq('id', emailRecord.id);
           updated++;
+          console.log(`[Gmail] ✅ Email marked as REPLIED`);
         }
       } catch (e) {}
     }
@@ -148,7 +194,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK' });
+  res.json({ status: 'OK', message: 'Email Tracker Running - Tracking 15 senders only (last 5 days)' });
 });
 
 // Get all emails with pagination
@@ -281,9 +327,9 @@ app.get('/api/stats', async (req, res) => {
 
 // === CRON JOBS ===
 
-// Fetch every 5 minutes
+// Fetch every 5 minutes - ONLY FROM 15 TRACKED SENDERS, LAST 5 DAYS
 cron.schedule('*/5 * * * *', async () => {
-  console.log('[Cron] 5-min fetch');
+  console.log('[Cron] 5-min fetch - Tracking 15 senders only (last 5 days)');
   const { data: users } = await supabase.from('users').select('account_email').not('gmail_token', 'is', null);
   for (const user of users || []) {
     await fetchAllEmails(user.account_email);
@@ -303,5 +349,8 @@ cron.schedule('*/15 * * * *', async () => {
 
 app.listen(PORT, () => {
   console.log(`[Server] Running on port ${PORT}`);
-  console.log('[Tracker] Email tracking active - 5 min fetch, 15 min reply check');
+  console.log('[Tracker] ✅ Tracking ONLY 15 senders from last 5 days');
+  console.log('[Tracked Senders]:');
+  Array.from(TRACKED).forEach(s => console.log(`  • ${s}`));
+  console.log('[Cron] 5-min fetch, 15-min reply check');
 });
