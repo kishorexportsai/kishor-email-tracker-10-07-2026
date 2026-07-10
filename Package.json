@@ -1,22 +1,21 @@
 {
   "name": "kishor-email-tracker",
   "version": "1.0.0",
-  "description": "Internal email tracker and CRM for Kishor Exports",
-  "main": "backend/server.js",
+  "description": "Email Tracker for Kishor Exports",
+  "main": "server.js",
   "scripts": {
-    "start": "node backend/server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@azure/msal-node": "^2.6.0",
-    "@supabase/supabase-js": "^2.39.0",
-    "axios": "^1.6.0",
-    "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "googleapis": "^130.0.0",
-    "jsonwebtoken": "^9.0.2",
-    "node-cron": "^3.0.3",
+    "node-cron": "^3.0.2",
+    "googleapis": "^118.0.0",
+    "@supabase/supabase-js": "^2.38.4",
+    "dotenv": "^16.3.1",
     "nodemailer": "^6.9.7"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
