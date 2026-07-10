@@ -1,4 +1,5 @@
 require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
 const cron = require('node-cron');
@@ -7,11 +8,41 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 app.use(express.json());
 
-// === 15 TRACKED SENDERS ONLY ===
+// =====================================================
+// GOOGLE OAUTH SETUP
+// =====================================================
+
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  process.env.GMAIL_REDIRECT_URI
+);
+
+const GMAIL_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/userinfo.email'
+];
+
+function getDefaultGmailAccount() {
+  return (process.env.GMAIL_ACCOUNTS || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean)[0] || '';
+}
+
+// =====================================================
+// ONLY THESE 15 SENDERS WILL BE TRACKED
+// =====================================================
+
 const TRACKED = new Set([
   'nirvana.balsingh@wefashion.com',
   'ilona.van.de.schootbrugge@wefashion.com',
@@ -28,329 +59,952 @@ const TRACKED = new Set([
   'bettina@gai-lisva.com',
   'camillad@luxkids.dk',
   'emma@emmamalena.com'
-].map(e => e.toLowerCase()));
+].map(email => email.toLowerCase()));
 
-// === UTILITY FUNCTIONS ===
+// =====================================================
+// UTILITY FUNCTIONS
+// =====================================================
 
 function getHeader(headers, name) {
-  return headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+  return (
+    headers.find(
+      header => header.name.toLowerCase() === name.toLowerCase()
+    )?.value || ''
+  );
+}
+
+function extractSenderEmail(fromHeader) {
+  const match = fromHeader.match(/<(.+?)>/);
+
+  if (match?.[1]) {
+    return match[1].trim().toLowerCase();
+  }
+
+  return fromHeader.trim().toLowerCase();
 }
 
 async function getToken(email) {
-  const { data } = await supabase.from('users').select('gmail_token').eq('account_email', email).single();
-  if (!data?.gmail_token) return null;
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('gmail_token')
+    .eq('account_email', normalizedEmail)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[Supabase] Failed to load token for ${normalizedEmail}:`, error.message);
+    return null;
+  }
+
+  if (!data?.gmail_token) {
+    return null;
+  }
+
   try {
-    return typeof data.gmail_token === 'string' ? JSON.parse(data.gmail_token) : data.gmail_token;
-  } catch {
+    return typeof data.gmail_token === 'string'
+      ? JSON.parse(data.gmail_token)
+      : data.gmail_token;
+  } catch (error) {
+    console.error(`[Token] Invalid Gmail token for ${normalizedEmail}`);
     return null;
   }
 }
 
 async function saveToken(email, tokens) {
-  await supabase.from('users').update({ gmail_token: JSON.stringify(tokens) }).eq('account_email', email);
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    throw new Error('Account email is missing while saving Gmail token.');
+  }
+
+  const { data: existingUser, error: findError } = await supabase
+    .from('users')
+    .select('account_email')
+    .eq('account_email', normalizedEmail)
+    .maybeSingle();
+
+  if (findError) {
+    throw findError;
+  }
+
+  if (!existingUser) {
+    throw new Error(
+      `No user row found for ${normalizedEmail}. Add this email to the users table under account_email first.`
+    );
+  }
+
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({
+      gmail_token: JSON.stringify(tokens)
+    })
+    .eq('account_email', normalizedEmail);
+
+  if (updateError) {
+    throw updateError;
+  }
 }
 
-// === FETCH EMAILS - ONLY FROM 15 TRACKED SENDERS ===
+function createOAuthClient(tokens, email) {
+  const client = new google.auth.OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    process.env.GMAIL_REDIRECT_URI
+  );
+
+  client.setCredentials(tokens);
+
+  client.on('tokens', async newTokens => {
+    try {
+      const mergedTokens = {
+        ...tokens,
+        ...newTokens
+      };
+
+      await saveToken(email, mergedTokens);
+      console.log(`[OAuth] Refreshed token saved for ${email}`);
+    } catch (error) {
+      console.error(`[OAuth] Failed to save refreshed token for ${email}:`, error.message);
+    }
+  });
+
+  return client;
+}
+
+// =====================================================
+// FETCH EMAILS
+// ONLY FROM 15 TRACKED SENDERS
+// ONLY FROM LAST 5 DAYS
+// =====================================================
+
 async function fetchAllEmails(email) {
-  const tokens = await getToken(email);
-  if (!tokens) return 0;
+  const normalizedEmail = String(email || '').trim().toLowerCase();
 
-  const oauth2Client = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET, process.env.GMAIL_REDIRECT_URI);
-  oauth2Client.setCredentials(tokens);
-  oauth2Client.on('tokens', (newTokens) => saveToken(email, { ...tokens, ...newTokens }));
+  const tokens = await getToken(normalizedEmail);
 
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+  if (!tokens) {
+    console.log(`[Gmail] No token found for ${normalizedEmail}`);
+    return 0;
+  }
+
+  const client = createOAuthClient(tokens, normalizedEmail);
+
+  const gmail = google.gmail({
+    version: 'v1',
+    auth: client
+  });
 
   try {
-    // === HARD LIMIT: LAST 5 DAYS ONLY ===
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+
     const afterDate = fiveDaysAgo.toISOString().split('T')[0];
-    const query = `in:inbox after:${afterDate}`;
 
-    console.log(`[Gmail] Fetching from ${afterDate} (5 days) - TRACKED SENDERS ONLY`);
+    const senderQuery = Array.from(TRACKED)
+      .map(sender => `from:${sender}`)
+      .join(' OR ');
 
-    const { data: messages_result } = await gmail.users.messages.list({ userId: 'me', q: query, maxResults: 500 });
-    const messages = messages_result?.messages || [];
+    const query = `in:inbox after:${afterDate} (${senderQuery})`;
+
+    console.log(
+      `[Gmail] Fetching emails for ${normalizedEmail} from ${afterDate}`
+    );
+
+    const { data: messageResult } = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: 500
+    });
+
+    const messages = messageResult?.messages || [];
 
     if (!messages.length) {
-      console.log(`[Gmail] No emails found`);
+      console.log(`[Gmail] No tracked emails found for ${normalizedEmail}`);
       return 0;
     }
 
     let saved = 0;
     let skipped = 0;
+
     const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
 
-    for (const msg of messages) {
-      const { data: exists } = await supabase.from('emails').select('id').eq('email_id', msg.id).single();
-      if (exists) continue;
+    for (const message of messages) {
+      try {
+        const { data: existingEmail } = await supabase
+          .from('emails')
+          .select('id')
+          .eq('email_id', message.id)
+          .maybeSingle();
 
-      const { data: full } = await gmail.users.messages.get({ userId: 'me', id: msg.id, format: 'full' });
-      const headers = full.payload?.headers || [];
-      const fromHeader = getHeader(headers, 'From') || '';
-      const subject = getHeader(headers, 'Subject') || '(No Subject)';
-      const receivedAtRaw = getHeader(headers, 'Date');
-      const receivedAt = new Date(receivedAtRaw || Date.now()).toISOString();
+        if (existingEmail) {
+          skipped++;
+          continue;
+        }
 
-      // === EXTRACT SENDER EMAIL ===
-      const match = fromHeader.match(/<(.+?)>/);
-      let senderEmail = match ? match[1].toLowerCase().trim() : fromHeader.toLowerCase().trim();
+        const { data: fullMessage } = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'full'
+        });
 
-      // === CHECK IF SENDER IS TRACKED ===
-      if (!TRACKED.has(senderEmail)) {
-        skipped++;
-        continue;
+        const headers = fullMessage.payload?.headers || [];
+
+        const fromHeader = getHeader(headers, 'From');
+        const subject = getHeader(headers, 'Subject') || '(No Subject)';
+        const receivedAtRaw = getHeader(headers, 'Date');
+
+        const senderEmail = extractSenderEmail(fromHeader);
+
+        if (!TRACKED.has(senderEmail)) {
+          skipped++;
+          continue;
+        }
+
+        const receivedDate = new Date(receivedAtRaw || Date.now());
+
+        if (Number.isNaN(receivedDate.getTime())) {
+          skipped++;
+          console.log(`[Gmail] Invalid date for email from ${senderEmail}`);
+          continue;
+        }
+
+        const receivedAt = receivedDate.toISOString();
+        const emailAge = Date.now() - receivedDate.getTime();
+
+        if (emailAge > fiveDaysMs) {
+          skipped++;
+          console.log(`[Gmail] Skipped old email from ${senderEmail}`);
+          continue;
+        }
+
+        const { error: insertError } = await supabase
+          .from('emails')
+          .insert({
+            email_id: message.id,
+            thread_id: fullMessage.threadId,
+            account: normalizedEmail,
+            sender_email: senderEmail,
+            sender_name: fromHeader.split('<')[0].trim(),
+            subject,
+            received_at: receivedAt,
+            status: 'unreplied',
+            body_preview: fullMessage.snippet || '',
+            email_link: `https://mail.google.com/mail/u/0/#inbox/${message.id}`
+          });
+
+        if (insertError) {
+          console.error(
+            `[Supabase] Failed to save email ${message.id}:`,
+            insertError.message
+          );
+          continue;
+        }
+
+        saved++;
+        console.log(`[Gmail] Saved email from ${senderEmail}`);
+      } catch (messageError) {
+        console.error(
+          `[Gmail] Failed processing message ${message.id}:`,
+          messageError.message
+        );
       }
-
-      // === DOUBLE CHECK: EMAIL IS WITHIN 5 DAYS ===
-      const emailTimeMs = new Date(receivedAt).getTime();
-      const nowMs = Date.now();
-      if ((nowMs - emailTimeMs) > fiveDaysMs) {
-        skipped++;
-        console.log(`[Gmail] SKIP (too old): ${senderEmail}`);
-        continue;
-      }
-
-      saved++;
-      console.log(`[Gmail] SAVE: ${senderEmail}`);
-
-      await supabase.from('emails').insert({
-        email_id: msg.id,
-        thread_id: full.threadId,
-        account: email,
-        sender_email: senderEmail,
-        sender_name: fromHeader.split('<')[0].trim(),
-        subject: subject,
-        received_at: receivedAt,
-        status: 'unreplied',
-        body_preview: full.snippet || '',
-        email_link: `https://mail.google.com/mail/u/0/#inbox/${msg.id}`,
-      });
     }
 
-    console.log(`[Gmail] SAVED: ${saved} | SKIPPED: ${skipped}`);
-    return saved;
+    console.log(
+      `[Gmail] Account ${normalizedEmail} — Saved: ${saved}, Skipped: ${skipped}`
+    );
 
-  } catch (err) {
-    console.error(`[Gmail] Error:`, err.message);
+    return saved;
+  } catch (error) {
+    console.error(
+      `[Gmail] Fetch error for ${normalizedEmail}:`,
+      error.message
+    );
+
     return 0;
   }
 }
 
-// === CHECK FOR REPLIES ===
-async function checkForReplies(email) {
-  const tokens = await getToken(email);
-  if (!tokens) return;
+// =====================================================
+// CHECK FOR REPLIES
+// =====================================================
 
-  const oauth2Client = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET, process.env.GMAIL_REDIRECT_URI);
-  oauth2Client.setCredentials(tokens);
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+async function checkForReplies(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  const tokens = await getToken(normalizedEmail);
+
+  if (!tokens) {
+    console.log(`[Gmail] No token found for reply check: ${normalizedEmail}`);
+    return;
+  }
+
+  const client = createOAuthClient(tokens, normalizedEmail);
+
+  const gmail = google.gmail({
+    version: 'v1',
+    auth: client
+  });
 
   try {
-    const { data: unreplied } = await supabase.from('emails').select('id, thread_id, received_at').eq('status', 'unreplied');
-    if (!unreplied?.length) {
-      console.log(`[Gmail] No unreplied emails to check`);
+    const { data: unrepliedEmails, error: fetchError } = await supabase
+      .from('emails')
+      .select('id, thread_id, received_at, account')
+      .eq('status', 'unreplied')
+      .eq('account', normalizedEmail);
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!unrepliedEmails?.length) {
+      console.log(`[Gmail] No unreplied emails for ${normalizedEmail}`);
       return;
     }
 
-    console.log(`[Gmail] Checking ${unreplied.length} unreplied emails for replies...`);
+    console.log(
+      `[Gmail] Checking ${unrepliedEmails.length} unreplied emails for ${normalizedEmail}`
+    );
 
     let updated = 0;
 
-    for (const emailRecord of unreplied) {
-      if (!emailRecord.thread_id) continue;
+    for (const emailRecord of unrepliedEmails) {
+      if (!emailRecord.thread_id) {
+        continue;
+      }
 
       try {
-        const { data: thread } = await gmail.users.threads.get({ userId: 'me', id: emailRecord.thread_id, format: 'metadata' });
+        const { data: thread } = await gmail.users.threads.get({
+          userId: 'me',
+          id: emailRecord.thread_id,
+          format: 'metadata'
+        });
+
         const messages = thread.messages || [];
         const receivedTime = new Date(emailRecord.received_at).getTime();
 
-        const hasReply = messages.some(m => {
-          const isSent = (m.labelIds || []).includes('SENT');
-          const msgTime = parseInt(m.internalDate || '0');
-          return isSent && msgTime > receivedTime;
+        const hasReply = messages.some(message => {
+          const labels = message.labelIds || [];
+          const isSentEmail = labels.includes('SENT');
+          const messageTime = Number(message.internalDate || 0);
+
+          return isSentEmail && messageTime > receivedTime;
         });
 
-        if (hasReply) {
-          await supabase.from('emails').update({ status: 'replied', replied_at: new Date().toISOString() }).eq('id', emailRecord.id);
-          updated++;
-          console.log(`[Gmail] ✅ Email marked as REPLIED`);
+        if (!hasReply) {
+          continue;
         }
-      } catch (e) {}
+
+        const { error: updateError } = await supabase
+          .from('emails')
+          .update({
+            status: 'replied',
+            replied_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', emailRecord.id);
+
+        if (updateError) {
+          console.error(
+            `[Supabase] Failed to update reply status:`,
+            updateError.message
+          );
+          continue;
+        }
+
+        updated++;
+        console.log(`[Gmail] Email marked as replied`);
+      } catch (threadError) {
+        console.error(
+          `[Gmail] Failed checking thread ${emailRecord.thread_id}:`,
+          threadError.message
+        );
+      }
     }
 
-    console.log(`[Gmail] Updated ${updated} to replied`);
-
-  } catch (err) {
-    console.error(`[Gmail] Error checking replies:`, err.message);
+    console.log(
+      `[Gmail] Reply check completed for ${normalizedEmail}. Updated: ${updated}`
+    );
+  } catch (error) {
+    console.error(
+      `[Gmail] Reply check error for ${normalizedEmail}:`,
+      error.message
+    );
   }
 }
 
-// === API ROUTES ===
+// =====================================================
+// GOOGLE AUTH ROUTES
+// =====================================================
+
+app.get('/auth/google', (req, res) => {
+  try {
+    const accountEmail = String(
+      req.query.email || getDefaultGmailAccount()
+    )
+      .trim()
+      .toLowerCase();
+
+    if (!accountEmail) {
+      return res.status(400).send(`
+        <h2>Gmail account missing</h2>
+        <p>Add GMAIL_ACCOUNTS in Render.</p>
+        <p>Or open:</p>
+        <code>/auth/google?email=your@gmail.com</code>
+      `);
+    }
+
+    const state = Buffer.from(accountEmail).toString('base64url');
+
+    const authorizationUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      scope: GMAIL_SCOPES,
+      state
+    });
+
+    return res.redirect(authorizationUrl);
+  } catch (error) {
+    console.error(
+      '[OAuth] Failed to create Google authorization URL:',
+      error
+    );
+
+    return res
+      .status(500)
+      .send(`Could not start Google authentication: ${error.message}`);
+  }
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const code = String(req.query.code || '');
+    const state = String(req.query.state || '');
+
+    if (!code) {
+      return res.status(400).send('Google authorization code is missing.');
+    }
+
+    if (!state) {
+      return res.status(400).send('OAuth account state is missing.');
+    }
+
+    let accountEmail;
+
+    try {
+      accountEmail = Buffer.from(state, 'base64url')
+        .toString('utf8')
+        .trim()
+        .toLowerCase();
+    } catch (error) {
+      return res.status(400).send('Invalid OAuth account state.');
+    }
+
+    if (!accountEmail) {
+      return res.status(400).send('Gmail account email could not be determined.');
+    }
+
+    const { tokens } = await oauth2Client.getToken(code);
+
+    await saveToken(accountEmail, tokens);
+
+    oauth2Client.setCredentials(tokens);
+
+    console.log(`[OAuth] Gmail successfully connected: ${accountEmail}`);
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Gmail Connected</title>
+        </head>
+
+        <body style="
+          font-family: Arial, sans-serif;
+          padding: 40px;
+          background: #f5f7fb;
+        ">
+          <div style="
+            max-width: 600px;
+            margin: auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+          ">
+            <h2 style="color: #15803d;">
+              Gmail connected successfully
+            </h2>
+
+            <p>
+              Account:
+              <strong>${accountEmail}</strong>
+            </p>
+
+            <p>
+              The Gmail authorization token has been saved in Supabase.
+            </p>
+
+            <p>
+              <a href="/" style="
+                display: inline-block;
+                margin-top: 15px;
+                padding: 12px 20px;
+                background: #2563eb;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+              ">
+                Open Email Tracker
+              </a>
+            </p>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('[OAuth] Google callback failed:', error);
+
+    return res.status(500).send(`
+      <h2>Google authentication failed</h2>
+      <p>${error.message}</p>
+    `);
+  }
+});
+
+// =====================================================
+// MAIN ROUTES
+// =====================================================
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Email Tracker Running - Tracking 15 senders only (last 5 days)' });
+  res.json({
+    status: 'OK',
+    message: 'Email Tracker Running',
+    trackedSenders: TRACKED.size,
+    emailHistoryDays: 5
+  });
 });
 
-// Get all emails with pagination
+// =====================================================
+// EMAIL API
+// =====================================================
+
 app.get('/api/emails', async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = (parseInt(req.query.page) - 1 || 0) * limit;
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 50, 1),
+      500
+    );
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const offset = (page - 1) * limit;
+
     const status = req.query.status;
     const account = req.query.account;
 
-    let query = supabase.from('emails').select('*', { count: 'exact' }).order('received_at', { ascending: false });
+    let query = supabase
+      .from('emails')
+      .select('*', {
+        count: 'exact'
+      })
+      .order('received_at', {
+        ascending: false
+      });
 
-    if (status) query = query.eq('status', status);
-    if (account) query = query.eq('account', account);
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    if (account) {
+      query = query.eq('account', account);
+    }
 
     query = query.range(offset, offset + limit - 1);
 
-    const { data, count } = await query;
+    const { data, count, error } = await query;
 
-    res.json({
+    if (error) {
+      throw error;
+    }
+
+    return res.json({
       emails: data || [],
       total: count || 0,
       limit,
-      page: Math.floor(offset / limit) + 1
+      page,
+      totalPages: Math.ceil((count || 0) / limit)
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error('[API] Failed to load emails:', error.message);
+
+    return res.status(500).json({
+      error: error.message
+    });
   }
 });
 
-// Get unreplied emails
 app.get('/api/emails/unreplied', async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = (parseInt(req.query.page) - 1 || 0) * limit;
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 50, 1),
+      500
+    );
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const offset = (page - 1) * limit;
+
     const account = req.query.account;
 
-    let query = supabase.from('emails').select('*', { count: 'exact' }).eq('status', 'unreplied').order('received_at', { ascending: false });
+    let query = supabase
+      .from('emails')
+      .select('*', {
+        count: 'exact'
+      })
+      .eq('status', 'unreplied')
+      .order('received_at', {
+        ascending: false
+      });
 
-    if (account) query = query.eq('account', account);
+    if (account) {
+      query = query.eq('account', account);
+    }
 
     query = query.range(offset, offset + limit - 1);
 
-    const { data, count } = await query;
+    const { data, count, error } = await query;
 
-    res.json({
+    if (error) {
+      throw error;
+    }
+
+    return res.json({
       emails: data || [],
       total: count || 0,
       limit,
-      page: Math.floor(offset / limit) + 1
+      page,
+      totalPages: Math.ceil((count || 0) / limit)
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error('[API] Failed to load unreplied emails:', error.message);
+
+    return res.status(500).json({
+      error: error.message
+    });
   }
 });
 
-// Get email body
 app.get('/api/emails/:emailId/body', async (req, res) => {
   try {
-    const { data: email } = await supabase.from('emails').select('*').eq('email_id', req.params.emailId).single();
-    if (!email) return res.status(404).json({ error: 'Email not found' });
+    const { data: email, error: emailError } = await supabase
+      .from('emails')
+      .select('*')
+      .eq('email_id', req.params.emailId)
+      .maybeSingle();
+
+    if (emailError) {
+      throw emailError;
+    }
+
+    if (!email) {
+      return res.status(404).json({
+        error: 'Email not found'
+      });
+    }
 
     const tokens = await getToken(email.account);
-    if (!tokens) return res.status(401).json({ error: 'No token' });
 
-    const oauth2Client = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET, process.env.GMAIL_REDIRECT_URI);
-    oauth2Client.setCredentials(tokens);
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    if (!tokens) {
+      return res.status(401).json({
+        error: 'No Gmail token found for this account'
+      });
+    }
 
-    const { data: full } = await gmail.users.messages.get({ userId: 'me', id: req.params.emailId, format: 'full' });
-    const payload = full.payload;
+    const client = createOAuthClient(tokens, email.account);
+
+    const gmail = google.gmail({
+      version: 'v1',
+      auth: client
+    });
+
+    const { data: fullMessage } = await gmail.users.messages.get({
+      userId: 'me',
+      id: req.params.emailId,
+      format: 'full'
+    });
+
+    const payload = fullMessage.payload || {};
+
     let body = '';
     let mimeType = 'text/plain';
 
-    if (payload.parts) {
-      const textPart = payload.parts.find(p => p.mimeType === 'text/plain');
-      const htmlPart = payload.parts.find(p => p.mimeType === 'text/html');
-      if (htmlPart) {
-        mimeType = 'text/html';
-        body = Buffer.from(htmlPart.body.data || '', 'base64').toString();
-      } else if (textPart) {
-        body = Buffer.from(textPart.body.data || '', 'base64').toString();
+    function findMessagePart(parts, targetMimeType) {
+      for (const part of parts || []) {
+        if (part.mimeType === targetMimeType && part.body?.data) {
+          return part;
+        }
+
+        if (part.parts?.length) {
+          const nestedPart = findMessagePart(
+            part.parts,
+            targetMimeType
+          );
+
+          if (nestedPart) {
+            return nestedPart;
+          }
+        }
       }
-    } else if (payload.body?.data) {
-      body = Buffer.from(payload.body.data, 'base64').toString();
+
+      return null;
     }
 
-    res.json({ body, mimeType });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (payload.parts?.length) {
+      const htmlPart = findMessagePart(payload.parts, 'text/html');
+      const textPart = findMessagePart(payload.parts, 'text/plain');
+
+      if (htmlPart) {
+        mimeType = 'text/html';
+
+        body = Buffer.from(
+          htmlPart.body.data,
+          'base64url'
+        ).toString('utf8');
+      } else if (textPart) {
+        body = Buffer.from(
+          textPart.body.data,
+          'base64url'
+        ).toString('utf8');
+      }
+    } else if (payload.body?.data) {
+      mimeType = payload.mimeType || 'text/plain';
+
+      body = Buffer.from(
+        payload.body.data,
+        'base64url'
+      ).toString('utf8');
+    }
+
+    return res.json({
+      body,
+      mimeType
+    });
+  } catch (error) {
+    console.error('[API] Failed to load email body:', error.message);
+
+    return res.status(500).json({
+      error: error.message
+    });
   }
 });
 
-// Update email status
 app.patch('/api/emails/:emailId/status', async (req, res) => {
   try {
-    const { status } = req.body;
-    await supabase.from('emails').update({ status, updated_at: new Date().toISOString() }).eq('email_id', req.params.emailId);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const allowedStatuses = [
+      'unreplied',
+      'replied',
+      'no_reply_needed'
+    ];
+
+    const status = String(req.body.status || '').trim();
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        error: 'Invalid email status'
+      });
+    }
+
+    const { error } = await supabase
+      .from('emails')
+      .update({
+        status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('email_id', req.params.emailId);
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({
+      success: true,
+      status
+    });
+  } catch (error) {
+    console.error('[API] Failed to update email status:', error.message);
+
+    return res.status(500).json({
+      error: error.message
+    });
   }
 });
 
-// Get agents/accounts
+// =====================================================
+// AGENTS AND DASHBOARD STATS
+// =====================================================
+
 app.get('/api/agents', async (req, res) => {
   try {
-    const { data: users } = await supabase.from('users').select('account_email, name, role');
-    res.json(users || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('account_email, name, role')
+      .order('account_email', {
+        ascending: true
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json(users || []);
+  } catch (error) {
+    console.error('[API] Failed to load agents:', error.message);
+
+    return res.status(500).json({
+      error: error.message
+    });
   }
 });
 
-// Get dashboard stats
 app.get('/api/stats', async (req, res) => {
   try {
-    const { data: emails } = await supabase.from('emails').select('status');
+    const { data: emails, error } = await supabase
+      .from('emails')
+      .select('status');
 
-    const total = emails?.length || 0;
-    const unreplied = emails?.filter(e => e.status === 'unreplied').length || 0;
-    const replied = emails?.filter(e => e.status === 'replied').length || 0;
-    const noReplyNeeded = emails?.filter(e => e.status === 'no_reply_needed').length || 0;
+    if (error) {
+      throw error;
+    }
 
-    res.json({ total, unreplied, replied, noReplyNeeded });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const records = emails || [];
+
+    const total = records.length;
+
+    const unreplied = records.filter(
+      email => email.status === 'unreplied'
+    ).length;
+
+    const replied = records.filter(
+      email => email.status === 'replied'
+    ).length;
+
+    const noReplyNeeded = records.filter(
+      email => email.status === 'no_reply_needed'
+    ).length;
+
+    return res.json({
+      total,
+      unreplied,
+      replied,
+      noReplyNeeded
+    });
+  } catch (error) {
+    console.error('[API] Failed to load statistics:', error.message);
+
+    return res.status(500).json({
+      error: error.message
+    });
   }
 });
 
-// === CRON JOBS ===
+// =====================================================
+// MANUAL SYNC ROUTE
+// =====================================================
 
-// Fetch every 5 minutes - ONLY FROM 15 TRACKED SENDERS, LAST 5 DAYS
+app.post('/api/sync', async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('account_email')
+      .not('gmail_token', 'is', null);
+
+    if (error) {
+      throw error;
+    }
+
+    let totalSaved = 0;
+
+    for (const user of users || []) {
+      totalSaved += await fetchAllEmails(user.account_email);
+    }
+
+    return res.json({
+      success: true,
+      saved: totalSaved
+    });
+  } catch (error) {
+    console.error('[API] Manual synchronization failed:', error.message);
+
+    return res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+// =====================================================
+// CRON JOBS
+// =====================================================
+
+// Fetch emails every 5 minutes
 cron.schedule('*/5 * * * *', async () => {
-  console.log('[Cron] 5-min fetch - Tracking 15 senders only (last 5 days)');
-  const { data: users } = await supabase.from('users').select('account_email').not('gmail_token', 'is', null);
-  for (const user of users || []) {
-    await fetchAllEmails(user.account_email);
+  try {
+    console.log(
+      '[Cron] Starting 5-minute Gmail fetch for tracked senders'
+    );
+
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('account_email')
+      .not('gmail_token', 'is', null);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const user of users || []) {
+      await fetchAllEmails(user.account_email);
+    }
+  } catch (error) {
+    console.error('[Cron] Gmail fetch failed:', error.message);
   }
 });
 
 // Check replies every 15 minutes
 cron.schedule('*/15 * * * *', async () => {
-  console.log('[Cron] 15-min reply check');
-  const { data: users } = await supabase.from('users').select('account_email').not('gmail_token', 'is', null);
-  for (const user of users || []) {
-    await checkForReplies(user.account_email);
+  try {
+    console.log('[Cron] Starting 15-minute reply check');
+
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('account_email')
+      .not('gmail_token', 'is', null);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const user of users || []) {
+      await checkForReplies(user.account_email);
+    }
+  } catch (error) {
+    console.error('[Cron] Reply check failed:', error.message);
   }
 });
 
-// === START SERVER ===
+// =====================================================
+// START SERVER
+// =====================================================
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Running on port ${PORT}`);
-  console.log('[Tracker] ✅ Tracking ONLY 15 senders from last 5 days');
-  console.log('[Tracked Senders]:');
-  Array.from(TRACKED).forEach(s => console.log(`  • ${s}`));
-  console.log('[Cron] 5-min fetch, 15-min reply check');
+  console.log(`[Server] Health check: /health`);
+  console.log(`[OAuth] Connect Gmail: /auth/google`);
+  console.log(
+    `[Tracker] Tracking only ${TRACKED.size} approved senders from the last 5 days`
+  );
 });
