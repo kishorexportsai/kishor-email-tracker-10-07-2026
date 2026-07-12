@@ -184,7 +184,6 @@
         <div class="stat-card green"><div class="stat-label">Replied</div><div class="stat-value" id="statReplied">—</div></div>
         <div class="stat-card red"><div class="stat-label">Unreplied</div><div class="stat-value" id="statUnreplied">—</div></div>
         <div class="stat-card grey"><div class="stat-label">Auto-Filtered</div><div class="stat-value" id="statNoReply">—</div></div>
-        <div class="stat-card purple"><div class="stat-label">Internal</div><div class="stat-value" id="statInternal">—</div></div>
       </div>
 
       <!-- Dashboard tabs: Unreplied + No Reply Needed -->
@@ -418,7 +417,7 @@ async function checkGmailStatus() {
   }
 }
 
-function connectGmail() { window.location.href = `/auth/gmail?token=${token}`; }
+function connectGmail() { window.location.href = `/auth/google?email=${encodeURIComponent(currentUser?.account_email || '')}`; }
 
 function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -429,6 +428,7 @@ function showPage(page, el) {
   if (page === 'unreplied') loadUnreplied(1);
   if (page === 'noreply') loadNoreply(1);
   if (page === 'internal') loadInternal(1);
+  if (page === 'all') loadAll(1);
   if (page === 'weekly') loadWeekly();
   if (page === 'monthly') loadMonthly();
   if (page === 'admin') loadAdminUsers();
@@ -453,7 +453,6 @@ async function loadDashboard() {
   document.getElementById('statReplied').textContent = stats.replied;
   document.getElementById('statUnreplied').textContent = stats.unreplied;
   document.getElementById('statNoReply').textContent = stats.noReplyNeeded || '—';
-  document.getElementById('statInternal').textContent = stats.internal || '—';
 
   // Unreplied tab
   const data = await apiFetch('/api/emails/unreplied?limit=10');
@@ -598,8 +597,8 @@ async function loadAdminUsers() {
   if (!users || users.length === 0) { document.getElementById('adminUserList').innerHTML = '<div class="empty">No users found.</div>'; return; }
   const html = `<table class="admin-table"><thead><tr><th>Name</th><th>Login Email</th><th>Gmail Account</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
     <tbody>${users.map(u => `<tr>
-      <td><strong>${u.name}</strong></td>
-      <td style="font-size:12px;color:#666;">${u.email}</td>
+      <td><strong>${u.name||'—'}</strong></td>
+      <td style="font-size:12px;color:#666;">${u.email||'—'}</td>
       <td style="font-size:12px;color:#666;">${u.account_email||'—'}</td>
       <td><select id="role-${u.id}">
         <option value="agent" ${u.role==='agent'?'selected':''}>Agent</option>
@@ -638,7 +637,6 @@ async function loadReminderLogs() {
     </tr>`).join('')}</tbody></table>`;
 }
 
-// ── POPUP ─────────────────────────────────────────────────────────
 async function openPopup(email) {
   currentEmailId = email.id;
   document.getElementById('popupSubject').textContent = email.subject || '(No Subject)';
@@ -654,7 +652,6 @@ async function openPopup(email) {
     : email.status === 'replied' ? '✅ Replied'
     : '🤖 No Reply Needed';
 
-  // Show AI reason if available
   const aiReasonEl = document.getElementById('popupAiReason');
   aiReasonEl.textContent = email.ai_reason ? `AI: ${email.ai_reason}` : '';
 
@@ -761,7 +758,7 @@ function renderPagination(containerId, currentPage, total, limit, callback) {
 async function loadAgentFilters() {
   const agents = await apiFetch('/api/agents');
   if (!agents?.length) return;
-  ['filterUnrepliedAccount', 'filterAllAccount', 'filterNoreplyAccount'].forEach(id => {
+  ['filterUnrepliedAccount', 'filterAllAccount', 'filterNoreplyAccount', 'filterInternalAccount'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     agents.forEach(a => {
