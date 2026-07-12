@@ -513,57 +513,9 @@ app.get('/auth/google/callback', async (req, res) => {
 
     console.log(`[OAuth] Gmail successfully connected: ${accountEmail}`);
 
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Gmail Connected</title>
-        </head>
-
-        <body style="
-          font-family: Arial, sans-serif;
-          padding: 40px;
-          background: #f5f7fb;
-        ">
-          <div style="
-            max-width: 600px;
-            margin: auto;
-            padding: 30px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
-          ">
-            <h2 style="color: #15803d;">
-              Gmail connected successfully
-            </h2>
-
-            <p>
-              Account:
-              <strong>${accountEmail}</strong>
-            </p>
-
-            <p>
-              The Gmail authorization token has been saved in Supabase.
-            </p>
-
-            <p>
-              <a href="/" style="
-                display: inline-block;
-                margin-top: 15px;
-                padding: 12px 20px;
-                background: #2563eb;
-                color: white;
-                text-decoration: none;
-                border-radius: 6px;
-              ">
-                Open Email Tracker
-              </a>
-            </p>
-          </div>
-        </body>
-      </html>
-    `);
+    // Redirect to dashboard with success
+    const redirectUrl = `/?google_login=success&email=${encodeURIComponent(accountEmail)}`;
+    return res.redirect(redirectUrl);
   } catch (error) {
     console.error('[OAuth] Google callback failed:', error);
 
@@ -571,6 +523,74 @@ app.get('/auth/google/callback', async (req, res) => {
       <h2>Google authentication failed</h2>
       <p>${error.message}</p>
     `);
+  }
+});
+
+// =====================================================
+// LOGIN & AUTH API
+// =====================================================
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Simple hardcoded auth for admin
+    if (email === 'admin@kishorexports.com' && password === 'Kishor@123') {
+      const token = 'admin-token-' + Date.now();
+      const user = {
+        id: 'admin-1',
+        name: 'Admin',
+        email: 'admin@kishorexports.com',
+        account_email: 'kishor.merchant06@gmail.com',
+        role: 'senior_manager'
+      };
+      
+      return res.json({ token, user });
+    }
+    
+    return res.status(401).json({ error: 'Invalid credentials' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/me', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    
+    // Return default user
+    res.json({
+      id: 'admin-1',
+      name: 'Admin',
+      email: 'admin@kishorexports.com',
+      account_email: 'kishor.merchant06@gmail.com',
+      role: 'senior_manager'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/gmail/status', async (req, res) => {
+  try {
+    const email = req.query.email || '';
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('account_email, gmail_token')
+      .eq('account_email', email)
+      .maybeSingle();
+    
+    if (error || !user) {
+      return res.json({ connected: false });
+    }
+    
+    res.json({
+      connected: !!user.gmail_token,
+      account: email
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -696,6 +716,41 @@ app.get('/api/emails/unreplied', async (req, res) => {
     return res.status(500).json({
       error: error.message
     });
+  }
+});
+
+app.get('/api/emails/internal', async (req, res) => {
+  try {
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 50, 1),
+      500
+    );
+
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from('emails')
+      .select('*', { count: 'exact' })
+      .or('sender_email.ilike.%@kishorexports.com,sender_email.ilike.%@kishor.ai')
+      .order('received_at', { ascending: false });
+
+    if (req.query.account) query = query.eq('account', req.query.account);
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+
+    return res.json({
+      emails: data || [],
+      total: count || 0,
+      limit,
+      page,
+      totalPages: Math.ceil((count || 0) / limit)
+    });
+  } catch (error) {
+    console.error('[API] Failed to load internal emails:', error.message);
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -875,33 +930,32 @@ app.get('/api/stats', async (req, res) => {
   try {
     const { data: emails, error } = await supabase
       .from('emails')
-      .select('status');
+      .select('status, received_at');
 
     if (error) {
       throw error;
     }
 
     const records = emails || [];
+    const today = new Date().toISOString().split('T')[0];
 
     const total = records.length;
-
-    const unreplied = records.filter(
-      email => email.status === 'unreplied'
-    ).length;
-
-    const replied = records.filter(
-      email => email.status === 'replied'
-    ).length;
-
-    const noReplyNeeded = records.filter(
-      email => email.status === 'no_reply_needed'
+    const unreplied = records.filter(email => email.status === 'unreplied').length;
+    const replied = records.filter(email => email.status === 'replied').length;
+    const noReplyNeeded = records.filter(email => email.status === 'no_reply_needed').length;
+    const todayCount = records.filter(email => email.received_at.startsWith(today)).length;
+    const internal = records.filter(email => 
+      email.sender_email?.includes('@kishorexports.com') || 
+      email.sender_email?.includes('@kishor.ai')
     ).length;
 
     return res.json({
       total,
       unreplied,
       replied,
-      noReplyNeeded
+      noReplyNeeded,
+      today: todayCount,
+      internal
     });
   } catch (error) {
     console.error('[API] Failed to load statistics:', error.message);
@@ -909,6 +963,134 @@ app.get('/api/stats', async (req, res) => {
     return res.status(500).json({
       error: error.message
     });
+  }
+});
+
+app.get('/api/report/weekly/:email', async (req, res) => {
+  try {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data: emails, error } = await supabase
+      .from('emails')
+      .select('status, received_at, sender_email, sender_name, subject')
+      .eq('account', req.params.email)
+      .gte('received_at', sevenDaysAgo.toISOString());
+
+    if (error) throw error;
+
+    const daily = {};
+    (emails || []).forEach(e => {
+      const day = e.received_at.split('T')[0];
+      if (!daily[day]) daily[day] = { received: 0, replied: 0 };
+      daily[day].received++;
+      if (e.status === 'replied') daily[day].replied++;
+    });
+
+    const unrepliedEmails = emails.filter(e => e.status === 'unreplied');
+
+    return res.json({
+      total: emails.length,
+      replied: emails.filter(e => e.status === 'replied').length,
+      unreplied: unrepliedEmails.length,
+      daily,
+      unrepliedEmails
+    });
+  } catch (error) {
+    console.error('[API] Failed to load weekly report:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/report/monthly/:email', async (req, res) => {
+  try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data: emails, error } = await supabase
+      .from('emails')
+      .select('status, received_at, sender_email, sender_name, subject')
+      .eq('account', req.params.email)
+      .gte('received_at', thirtyDaysAgo.toISOString());
+
+    if (error) throw error;
+
+    const weekly = {};
+    (emails || []).forEach(e => {
+      const d = new Date(e.received_at);
+      const week = `Week ${Math.ceil(d.getDate() / 7)}`;
+      if (!weekly[week]) weekly[week] = { received: 0, replied: 0 };
+      weekly[week].received++;
+      if (e.status === 'replied') weekly[week].replied++;
+    });
+
+    const unrepliedEmails = emails.filter(e => e.status === 'unreplied');
+
+    return res.json({
+      total: emails.length,
+      replied: emails.filter(e => e.status === 'replied').length,
+      unreplied: unrepliedEmails.length,
+      weekly,
+      unrepliedEmails
+    });
+  } catch (error) {
+    console.error('[API] Failed to load monthly report:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// =====================================================
+// ADMIN ROUTES
+// =====================================================
+
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('account_email', { ascending: true });
+
+    if (error) throw error;
+    res.json(users || []);
+  } catch (error) {
+    console.error('[API] Failed to load admin users:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/users/:userId', async (req, res) => {
+  try {
+    const { role, is_active } = req.body;
+    const updates = {};
+    if (role) updates.role = role;
+    if (is_active !== undefined) updates.is_active = is_active;
+
+    const { error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', req.params.userId);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[API] Failed to update user:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/reminder-logs', async (req, res) => {
+  try {
+    const { data: logs, error } = await supabase
+      .from('reminder_logs')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+    res.json(logs || []);
+  } catch (error) {
+    console.error('[API] Failed to load reminder logs:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1008,3 +1190,4 @@ app.listen(PORT, '0.0.0.0', () => {
     `[Tracker] Tracking only ${TRACKED.size} approved senders from the last 5 days`
   );
 });
+
