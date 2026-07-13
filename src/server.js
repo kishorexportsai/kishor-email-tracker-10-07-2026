@@ -1190,4 +1190,3 @@ app.listen(PORT, '0.0.0.0', () => {
     `[Tracker] Tracking only ${TRACKED.size} approved senders from the last 5 days`
   );
 });
-
