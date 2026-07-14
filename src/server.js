@@ -1095,6 +1095,79 @@ app.get('/api/admin/reminder-logs', async (req, res) => {
 });
 
 // =====================================================
+// DEBUG ENDPOINT - DIAGNOSE ISSUES
+// =====================================================
+
+app.get('/api/debug', async (req, res) => {
+  try {
+    const debug = {
+      timestamp: new Date().toISOString(),
+      server_status: 'running',
+      tracked_senders: Array.from(TRACKED).length,
+      issues: []
+    };
+
+    // Check Supabase connection
+    const { data: usersWithTokens, error: usersError } = await supabase
+      .from('users')
+      .select('account_email, gmail_token')
+      .not('gmail_token', 'is', null);
+
+    if (usersError) {
+      debug.issues.push(`Supabase error: ${usersError.message}`);
+      return res.json(debug);
+    }
+
+    debug.users_with_tokens = usersWithTokens?.length || 0;
+
+    // Check each user's Gmail token
+    for (const user of usersWithTokens || []) {
+      const tokens = await getToken(user.account_email);
+      if (!tokens) {
+        debug.issues.push(`❌ ${user.account_email}: Gmail token expired or invalid`);
+      } else {
+        debug.gmail_connected = user.account_email;
+      }
+    }
+
+    // Check database stats
+    const { count: emailCount, error: emailCountError } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact' });
+
+    if (!emailCountError) {
+      debug.emails_in_database = emailCount || 0;
+    }
+
+    const { count: unrepliedCount, error: unrepliedCountError } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact' })
+      .eq('status', 'unreplied');
+
+    if (!unrepliedCountError) {
+      debug.unreplied_emails = unrepliedCount || 0;
+    }
+
+    const { count: repliedCount, error: repliedCountError } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact' })
+      .eq('status', 'replied');
+
+    if (!repliedCountError) {
+      debug.replied_emails = repliedCount || 0;
+    }
+
+    return res.json(debug);
+  } catch (error) {
+    console.error('[DEBUG] Error:', error.message);
+    return res.status(500).json({
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// =====================================================
 // MANUAL SYNC ROUTE
 // =====================================================
 
@@ -1122,6 +1195,119 @@ app.get('/api/sync', async (req, res) => {
   } catch (error) {
     console.error('[API] Manual synchronization failed:', error.message);
 
+    return res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+// =====================================================
+// DEBUG ENDPOINT - DIAGNOSE ISSUES
+// =====================================================
+
+app.get('/api/debug', async (req, res) => {
+  try {
+    const debug = {
+      timestamp: new Date().toISOString(),
+      server_status: 'running',
+      tracked_senders: Array.from(TRACKED).length,
+      issues: []
+    };
+
+    // Check Supabase connection
+    const { data: testQuery, error: testError } = await supabase
+      .from('users')
+      .select('account_email, gmail_token')
+      .limit(1);
+
+    if (testError) {
+      debug.issues.push(`Supabase connection failed: ${testError.message}`);
+      return res.json(debug);
+    }
+
+    debug.supabase = 'connected';
+
+    // Check users with Gmail tokens
+    const { data: usersWithTokens, error: usersError } = await supabase
+      .from('users')
+      .select('account_email, gmail_token')
+      .not('gmail_token', 'is', null);
+
+    if (usersError) {
+      debug.issues.push(`Failed to fetch users: ${usersError.message}`);
+      return res.json(debug);
+    }
+
+    debug.users_with_tokens = usersWithTokens?.length || 0;
+
+    // For each user, check Gmail token validity
+    if (usersWithTokens && usersWithTokens.length > 0) {
+      for (const user of usersWithTokens) {
+        const tokens = await getToken(user.account_email);
+        
+        if (!tokens) {
+          debug.issues.push(`❌ ${user.account_email}: Gmail token invalid or expired`);
+        } else {
+          debug.gmail_connected = user.account_email;
+          
+          // Try to fetch emails
+          const client = createOAuthClient(tokens, user.account_email);
+          const gmail = google.gmail({ version: 'v1', auth: client });
+          
+          try {
+            const fiveDaysAgo = new Date();
+            fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+            const afterDate = fiveDaysAgo.toISOString().split('T')[0];
+            
+            const senderQuery = Array.from(TRACKED)
+              .map(sender => `from:${sender}`)
+              .join(' OR ');
+            
+            const query = `in:inbox after:${afterDate} (${senderQuery})`;
+            
+            const { data: messageResult } = await gmail.users.messages.list({
+              userId: 'me',
+              q: query,
+              maxResults: 100
+            });
+            
+            const messageCount = messageResult?.messages?.length || 0;
+            debug.emails_found_in_gmail = messageCount;
+            
+            if (messageCount === 0) {
+              debug.issues.push(`⚠️  No emails from tracked senders in last 5 days`);
+            }
+          } catch (gmailError) {
+            debug.issues.push(`❌ Gmail API error: ${gmailError.message}`);
+          }
+        }
+      }
+    } else {
+      debug.issues.push('❌ No users with Gmail tokens in database');
+    }
+
+    // Check emails in database
+    const { data: emailCount, error: emailError } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact' });
+
+    if (!emailError) {
+      debug.emails_in_database = emailCount?.length || 0;
+    }
+
+    // Check unreplied emails
+    const { data: unrepliedCount, error: unrepliedError } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact' })
+      .eq('status', 'unreplied');
+
+    if (!unrepliedError) {
+      debug.unreplied_emails = unrepliedCount?.length || 0;
+    }
+
+    return res.json(debug);
+  } catch (error) {
+    console.error('[DEBUG] Error:', error.message);
     return res.status(500).json({
       error: error.message
     });
