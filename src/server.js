@@ -1098,7 +1098,7 @@ app.get('/api/admin/reminder-logs', async (req, res) => {
 // MANUAL SYNC ROUTE
 // =====================================================
 
-app.post('/api/sync', async (req, res) => {
+app.get('/api/sync', async (req, res) => {
   try {
     const { data: users, error } = await supabase
       .from('users')
