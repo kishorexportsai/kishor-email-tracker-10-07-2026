@@ -36,7 +36,7 @@ async function sendEmailViaResend(to, subject, htmlContent) {
       }
 
       const emailData = JSON.stringify({
-        from: 'Kishor Exports <noreply@kishorexports.com>',
+        from: 'Kishor Exports <onboarding@resend.dev>',
         to: to,
         subject: subject,
         html: htmlContent
