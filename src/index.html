@@ -5,13 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kishor Exports - Email Tracker</title>
   <style>
-    * {
+    body {
       margin: 0;
       padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
@@ -20,7 +16,7 @@
       justify-content: center;
     }
 
-    .login-container {
+    .container {
       background: white;
       padding: 40px;
       border-radius: 10px;
@@ -29,20 +25,18 @@
       max-width: 400px;
     }
 
-    .logo {
+    h1 {
       text-align: center;
-      margin-bottom: 30px;
-    }
-
-    .logo h1 {
       color: #333;
       font-size: 24px;
       margin-bottom: 5px;
     }
 
-    .logo p {
+    .subtitle {
+      text-align: center;
       color: #666;
       font-size: 14px;
+      margin-bottom: 30px;
     }
 
     .form-group {
@@ -57,8 +51,7 @@
       font-size: 14px;
     }
 
-    input[type="text"],
-    input[type="password"] {
+    input {
       width: 100%;
       padding: 12px;
       border: 1px solid #ddd;
@@ -66,58 +59,28 @@
       font-size: 14px;
     }
 
-    input[type="text"]:focus,
-    input[type="password"]:focus {
+    input:focus {
       outline: none;
       border-color: #667eea;
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
-    .button-group {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-
-    button {
-      flex: 1;
+    .btn-sign-in {
+      width: 100%;
       padding: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
       border: none;
       border-radius: 5px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.3s;
+      margin-bottom: 20px;
     }
 
-    .btn-login {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-
-    .btn-login:hover {
+    .btn-sign-in:hover {
       transform: translateY(-2px);
       box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-google {
-      background: white;
-      color: #333;
-      border: 1px solid #ddd;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .btn-google:hover {
-      background: #f8f8f8;
-      border-color: #ccc;
-    }
-
-    .google-icon {
-      width: 18px;
-      height: 18px;
     }
 
     .divider {
@@ -145,53 +108,33 @@
       margin-left: 10px;
     }
 
-    .error-message {
-      background: #fee;
-      color: #c33;
-      padding: 10px;
+    .btn-google {
+      width: 100%;
+      padding: 12px;
+      background: white;
+      color: #333;
+      border: 1px solid #ddd;
       border-radius: 5px;
-      margin-bottom: 20px;
-      font-size: 13px;
-      border-left: 4px solid #c33;
-      display: none;
-    }
-
-    .success-message {
-      background: #efe;
-      color: #3c3;
-      padding: 10px;
-      border-radius: 5px;
-      margin-bottom: 20px;
-      font-size: 13px;
-      border-left: 4px solid #3c3;
-      display: none;
-    }
-
-    .loading {
-      display: none;
-      text-align: center;
-      color: #667eea;
       font-size: 14px;
-      margin: 40px 0;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
 
-    .spinner {
-      display: inline-block;
-      width: 40px;
-      height: 40px;
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #667eea;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 15px;
+    .btn-google:hover {
+      background: #f8f8f8;
+      border-color: #ccc;
     }
 
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+    .google-icon {
+      width: 18px;
+      height: 18px;
     }
 
-    .footer-text {
+    .footer {
       text-align: center;
       font-size: 12px;
       color: #999;
@@ -200,121 +143,57 @@
   </style>
 </head>
 <body>
-  <div class="login-container">
-    <!-- Logo Section -->
-    <div class="logo">
-      <h1>🚀 Kishor Exports</h1>
-      <p>Email Tracker & CRM — Internal Tool</p>
-    </div>
+  <div class="container">
+    <h1>🚀 Kishor Exports</h1>
+    <p class="subtitle">Email Tracker & CRM — Internal Tool</p>
 
-    <!-- Error Message -->
-    <div class="error-message" id="errorMessage"></div>
-
-    <!-- Success Message -->
-    <div class="success-message" id="successMessage"></div>
-
-    <!-- Loading Indicator -->
-    <div class="loading" id="loadingIndicator">
-      <div class="spinner"></div>
-      <div>Connecting to Gmail...</div>
-    </div>
-
-    <!-- Login Form -->
-    <form id="loginForm">
+    <form onsubmit="return false;">
       <div class="form-group">
-        <label for="email">Email Address</label>
-        <input type="text" id="email" placeholder="admin@kishorexports.com" required>
+        <label>Email Address</label>
+        <input type="text" placeholder="admin@kishorexports.com">
       </div>
 
       <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" placeholder="Enter your password" required>
+        <label>Password</label>
+        <input type="password" placeholder="Enter your password">
       </div>
 
-      <div class="button-group">
-        <button type="submit" class="btn-login">Sign In</button>
-      </div>
+      <button type="button" class="btn-sign-in">Sign In</button>
     </form>
 
-    <!-- Divider -->
     <div class="divider">or</div>
 
-    <!-- Google OAuth Button -->
-    <div class="button-group">
-      <button type="button" class="btn-google" id="googleButton">
-        <svg class="google-icon" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-        </svg>
-        Sign in with Google
-      </button>
-    </div>
+    <button type="button" class="btn-google" onclick="handleGoogleSignIn()">
+      <svg class="google-icon" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      Sign in with Google
+    </button>
 
-    <!-- Footer -->
-    <div class="footer-text">
-      Protected by Gmail OAuth 2.0
-    </div>
+    <p class="footer">Protected by Gmail OAuth 2.0</p>
   </div>
 
   <script>
-    console.log('[App] Page loaded, setting up OAuth handler');
+    function handleGoogleSignIn() {
+      console.log('[Google] Button clicked!');
+      window.location.href = '/auth/google?account=kishor.merchant06@gmail.com';
+    }
 
-    // Check for OAuth redirect on page load
-    window.addEventListener('DOMContentLoaded', function() {
-      console.log('[OAuth] Checking for redirect parameters...');
+    // Check for OAuth redirect
+    window.addEventListener('load', function() {
+      const params = new URLSearchParams(window.location.search);
+      const success = params.get('google_login');
       
-      const urlParams = new URLSearchParams(window.location.search);
-      const googleLoginSuccess = urlParams.get('google_login');
-      const email = urlParams.get('email');
-      
-      console.log('[OAuth] google_login:', googleLoginSuccess);
-      console.log('[OAuth] email:', email);
-      
-      if (googleLoginSuccess === 'success' && email) {
-        console.log('[OAuth] Success detected! Redirecting to dashboard...');
-        
-        document.getElementById('loginForm').style.display = 'none';
-        document.getElementById('loadingIndicator').style.display = 'block';
-        
-        const successMsg = document.getElementById('successMessage');
-        successMsg.textContent = '✅ Gmail connected successfully! Redirecting...';
-        successMsg.style.display = 'block';
-        
-        // Redirect to dashboard
+      if (success === 'success') {
+        console.log('[OAuth] Success detected!');
         setTimeout(function() {
           window.location.href = '/dashboard.html';
-        }, 2000);
+        }, 1000);
       }
     });
-
-    // Handle login form
-    document.getElementById('loginForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const errorMsg = document.getElementById('errorMessage');
-      errorMsg.textContent = '⚠️ Admin login not implemented. Use "Sign in with Google".';
-      errorMsg.style.display = 'block';
-    });
-
-    // Google button click handler
-    document.getElementById('googleButton').addEventListener('click', function() {
-      console.log('[OAuth] Google button clicked! Starting OAuth flow...');
-      
-      const loadingDiv = document.getElementById('loadingIndicator');
-      const loginForm = document.getElementById('loginForm');
-      
-      loadingDiv.style.display = 'block';
-      loginForm.style.display = 'none';
-      
-      // Redirect to OAuth
-      const account = 'kishor.merchant06@gmail.com';
-      console.log('[OAuth] Redirecting to /auth/google with account:', account);
-      
-      window.location.href = '/auth/google?account=' + encodeURIComponent(account);
-    });
-
-    console.log('[App] Startup complete');
   </script>
 </body>
 </html>
