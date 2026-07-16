@@ -22,32 +22,35 @@ app.use(express.static(__dirname));
 // EMAIL SETUP - BREVO API
 // =====================================================
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const RESEND_API_URL = 'api.resend.com';
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_API_URL = 'api.brevo.com';
 
-// Send email using Resend API (using HTTPS)
-async function sendEmailViaResend(to, subject, htmlContent) {
+// Send email using Brevo API (using HTTPS)
+async function sendEmailViaBrevo(to, subject, htmlContent) {
   return new Promise((resolve) => {
     try {
-      if (!RESEND_API_KEY) {
-        console.error('[Email] RESEND_API_KEY not set');
+      if (!BREVO_API_KEY) {
+        console.error('[Email] BREVO_API_KEY not set');
         resolve(false);
         return;
       }
 
       const emailData = JSON.stringify({
-        from: 'Kishor Exports <onboarding@resend.dev>',
-        to: to,
+        to: [{ email: to }],
         subject: subject,
-        html: htmlContent
+        htmlContent: htmlContent,
+        sender: { 
+          name: 'Kishor Exports', 
+          email: 'no-reply@brevo.com' 
+        }
       });
 
       const options = {
-        hostname: RESEND_API_URL,
-        path: '/emails',
+        hostname: 'api.brevo.com',
+        path: '/v3/smtp/email',
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${RESEND_API_KEY}`,
+          'api-key': BREVO_API_KEY,
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(emailData)
         }
@@ -61,11 +64,11 @@ async function sendEmailViaResend(to, subject, htmlContent) {
         });
 
         res.on('end', () => {
-          if (res.statusCode === 200) {
-            console.log(`[Email] ✅ Email sent to ${to} via Resend`);
+          if (res.statusCode === 201) {
+            console.log(`[Email] ✅ Email sent to ${to} via Brevo`);
             resolve(true);
           } else {
-            console.error(`[Email] ❌ Resend error (${res.statusCode}):`, data);
+            console.error(`[Email] ❌ Brevo error (${res.statusCode}):`, data);
             resolve(false);
           }
         });
@@ -293,7 +296,7 @@ async function sendReminderToUser() {
 <p>Best regards,<br/>Email Tracker System</p>
 `;
 
-    const userSent = await sendEmailViaResend(
+    const userSent = await sendEmailViaBrevo(
       'kishor.merchant06@gmail.com',
       `⚠️ Please Reply: ${unrepliedEmails.length} Unreplied Emails`,
       emailContent
@@ -365,7 +368,7 @@ async function checkUserReplyAndAlertManager() {
 <p>Best regards,<br/>Email Tracker System</p>
 `;
 
-    const managerSent = await sendEmailViaResend(
+    const managerSent = await sendEmailViaBrevo(
       'marketing.kishorexports1@gmail.com',
       `🚨 URGENT: User Did Not Reply - ${stillUnrepliedEmails.length} Unreplied Emails`,
       emailContent
@@ -447,7 +450,7 @@ async function sendSenderReminder() {
 `;
 
         // Send email to sender via Brevo
-        const reminderSent = await sendEmailViaResend(
+        const reminderSent = await sendEmailViaBrevo(
           senderEmail,
           `⏰ Reminder: We're Waiting for Your Response`,
           emailContent
