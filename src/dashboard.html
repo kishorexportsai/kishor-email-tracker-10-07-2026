@@ -531,12 +531,15 @@
         <div class="card-body">
           <div class="info-box">
             <strong>ℹ️ How it works:</strong><br>
-            Click the buttons below to test sending reminder emails. This will immediately send test emails and log them in the history section below.
+            <strong>1. Reminder to User:</strong> Every hour, kishor.merchant06@gmail.com gets a reminder about unreplied emails.<br>
+            <strong>2. Manager Alert:</strong> If user doesn't reply after 24 hours, manager (marketing.kishorexports1@gmail.com) gets an urgent alert.<br>
+            <br>
+            Click the buttons below to test the system immediately.
           </div>
 
           <div class="button-group">
-            <button class="btn btn-success" onclick="testManagerEmail()">📢 Test Manager Email</button>
-            <button class="btn btn-success" onclick="testSenderReminders()">💬 Test Sender Reminders</button>
+            <button class="btn btn-success" onclick="testUserReminder()">👤 Test Reminder to User</button>
+            <button class="btn btn-success" onclick="testManagerAlert()">🚨 Test Manager Alert</button>
             <button class="btn" onclick="loadEmailHistory()">🔄 Refresh History</button>
           </div>
 
@@ -572,16 +575,16 @@
             </thead>
             <tbody>
               <tr>
-                <td><span class="badge badge-manager">Manager Alert</span></td>
+                <td><span class="badge badge-manager">User Reminder</span></td>
                 <td>Every hour</td>
-                <td>marketing.kishorexports1@gmail.com</td>
-                <td>Shows unreplied emails from last 24 hours</td>
+                <td>kishor.merchant06@gmail.com</td>
+                <td>Reminds user about unreplied emails</td>
               </tr>
               <tr>
-                <td><span class="badge badge-sender">Sender Reminder</span></td>
-                <td>Every 6 hours</td>
-                <td>Each sender's email address</td>
-                <td>Reminds senders to reply to their emails</td>
+                <td><span class="badge badge-sender">Manager Alert</span></td>
+                <td>Daily at 3:30 AM</td>
+                <td>marketing.kishorexports1@gmail.com</td>
+                <td>Alerts manager if user didn't reply after 24 hours</td>
               </tr>
             </tbody>
           </table>
@@ -846,20 +849,20 @@
       }
     }
 
-    // Test manager email
-    async function testManagerEmail() {
+    // Test user reminder
+    async function testUserReminder() {
       const msgEl = document.getElementById('testMessage');
-      msgEl.innerHTML = '<div class="alert alert-info">⏳ Sending manager test email...</div>';
+      msgEl.innerHTML = '<div class="alert alert-info">⏳ Sending reminder to user...</div>';
 
       try {
-        const res = await fetch('/api/test/send-manager-email');
+        const res = await fetch('/api/test/send-user-reminder');
         const data = await res.json();
 
         if (res.ok) {
           msgEl.innerHTML = `
             <div class="alert alert-success">
-              ✅ Manager test email sent!<br>
-              Email: <strong>marketing.kishorexports1@gmail.com</strong>
+              ✅ User reminder sent!<br>
+              Email: <strong>kishor.merchant06@gmail.com</strong>
             </div>
           `;
           setTimeout(loadEmailHistory, 1000);
@@ -871,20 +874,20 @@
       }
     }
 
-    // Test sender reminders
-    async function testSenderReminders() {
+    // Test manager alert (check user reply)
+    async function testManagerAlert() {
       const msgEl = document.getElementById('testMessage');
-      msgEl.innerHTML = '<div class="alert alert-info">⏳ Sending sender reminder test emails...</div>';
+      msgEl.innerHTML = '<div class="alert alert-info">⏳ Checking user reply and alerting manager...</div>';
 
       try {
-        const res = await fetch('/api/test/send-sender-reminders');
+        const res = await fetch('/api/test/check-user-reply-alert-manager');
         const data = await res.json();
 
         if (res.ok) {
           msgEl.innerHTML = `
             <div class="alert alert-success">
-              ✅ Sender reminder test emails sent!<br>
-              Emails sent to all unreplied senders.
+              ✅ Manager alert check completed!<br>
+              If user didn't reply in 24 hours, alert sent to: <strong>marketing.kishorexports1@gmail.com</strong>
             </div>
           `;
           setTimeout(loadEmailHistory, 1000);
