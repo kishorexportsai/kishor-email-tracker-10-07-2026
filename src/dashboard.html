@@ -633,7 +633,8 @@
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
-          hour12: true
+          hour12: true,
+          timeZone: 'Asia/Kolkata'
         });
         const status = email.status === 'unreplied' ? 'unreplied' : 'replied';
         const statusText = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
@@ -667,7 +668,8 @@
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
       });
       document.getElementById('modalStatus').textContent = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
 
