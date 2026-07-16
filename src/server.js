@@ -273,6 +273,19 @@ async function sendManagerNotification() {
     });
 
     console.log(`[Manager] ✅ Notification sent to manager about ${unrepliedEmails.length} unreplied emails`);
+    
+    // Log to database
+    try {
+      await supabase.from('reminder_logs').insert({
+        email_id: null,
+        reminder_type: 'manager_notification',
+        sent_at: new Date().toISOString(),
+        recipients: 'marketing.kishorexports1@gmail.com',
+        email_count: unrepliedEmails.length
+      });
+    } catch (logError) {
+      console.error('[Manager] Could not log email send:', logError.message);
+    }
   } catch (error) {
     console.error('[Manager] Error sending notification:', error.message);
   }
@@ -926,8 +939,52 @@ cron.schedule('0 */6 * * *', async () => {
 });
 
 // =====================================================
-// START SERVER
+// TEST ENDPOINTS - FOR TESTING EMAIL FUNCTIONALITY
 // =====================================================
+
+app.get('/api/test/send-manager-email', async (req, res) => {
+  try {
+    console.log('[TEST] Testing manager email...');
+    await sendManagerNotification();
+    res.json({ success: true, message: 'Manager email test sent to marketing.kishorexports1@gmail.com' });
+  } catch (error) {
+    console.error('[TEST] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/test/send-sender-reminders', async (req, res) => {
+  try {
+    console.log('[TEST] Testing sender reminder emails...');
+    await sendSenderReminder();
+    res.json({ success: true, message: 'Sender reminder emails test sent' });
+  } catch (error) {
+    console.error('[TEST] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get email sending history
+app.get('/api/email-history', async (req, res) => {
+  try {
+    const { data: logs, error } = await supabase
+      .from('reminder_logs')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+
+    res.json({ 
+      success: true, 
+      total: logs ? logs.length : 0,
+      logs: logs || [] 
+    });
+  } catch (error) {
+    console.error('[API] Error fetching email history:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Running on port ${PORT}`);
