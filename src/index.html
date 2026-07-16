@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kishor Exports - Email Tracker & CRM</title>
+  <title>Kishor Exports - Email Tracker</title>
   <style>
     * {
       margin: 0;
@@ -12,8 +12,7 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
       display: flex;
@@ -65,7 +64,6 @@
       border: 1px solid #ddd;
       border-radius: 5px;
       font-size: 14px;
-      transition: border-color 0.3s;
     }
 
     input[type="text"]:focus,
@@ -100,10 +98,6 @@
     .btn-login:hover {
       transform: translateY(-2px);
       box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-login:active {
-      transform: translateY(0);
     }
 
     .btn-google {
@@ -203,24 +197,6 @@
       color: #999;
       margin-top: 20px;
     }
-
-    .debug-info {
-      background: #f5f5f5;
-      padding: 10px;
-      border-radius: 5px;
-      font-size: 11px;
-      color: #666;
-      margin-top: 20px;
-      border: 1px solid #ddd;
-      display: none;
-      max-height: 150px;
-      overflow-y: auto;
-    }
-
-    .debug-info p {
-      margin: 3px 0;
-      font-family: monospace;
-    }
   </style>
 </head>
 <body>
@@ -241,19 +217,18 @@
     <div class="loading" id="loadingIndicator">
       <div class="spinner"></div>
       <div>Connecting to Gmail...</div>
-      <div style="font-size: 12px; margin-top: 10px; color: #999;">Please wait, you'll be redirected shortly...</div>
     </div>
 
     <!-- Login Form -->
-    <form id="loginForm" style="display: block;">
+    <form id="loginForm">
       <div class="form-group">
         <label for="email">Email Address</label>
-        <input type="text" id="email" name="email" placeholder="admin@kishorexports.com" required>
+        <input type="text" id="email" placeholder="admin@kishorexports.com" required>
       </div>
 
       <div class="form-group">
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" placeholder="Enter your password" required>
+        <input type="password" id="password" placeholder="Enter your password" required>
       </div>
 
       <div class="button-group">
@@ -266,7 +241,7 @@
 
     <!-- Google OAuth Button -->
     <div class="button-group">
-      <button type="button" class="btn-google" onclick="connectGmail()">
+      <button type="button" class="btn-google" id="googleButton">
         <svg class="google-icon" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
           <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -281,146 +256,65 @@
     <div class="footer-text">
       Protected by Gmail OAuth 2.0
     </div>
-
-    <!-- Debug Info (hidden by default) -->
-    <div class="debug-info" id="debugInfo"></div>
   </div>
 
-  <!-- =====================================================
-       OAUTH SUCCESS HANDLER - REDIRECT TO DASHBOARD
-       ===================================================== -->
   <script>
-    // Debug function
-    function debug(message) {
-      const debugEl = document.getElementById('debugInfo');
-      if (!debugEl) return;
-      
-      const p = document.createElement('p');
-      p.textContent = message;
-      debugEl.appendChild(p);
-      
-      console.log('[DEBUG]', message);
-    }
+    console.log('[App] Page loaded, setting up OAuth handler');
 
-    // Check if Gmail login was successful on page load
-    document.addEventListener('DOMContentLoaded', function() {
-      console.log('=== PAGE LOADED - CHECKING FOR OAUTH REDIRECT ===');
+    // Check for OAuth redirect on page load
+    window.addEventListener('DOMContentLoaded', function() {
+      console.log('[OAuth] Checking for redirect parameters...');
       
-      // Get all URL parameters
       const urlParams = new URLSearchParams(window.location.search);
-      const fullUrl = window.location.href;
-      
-      console.log('[OAuth] Full URL:', fullUrl);
-      console.log('[OAuth] URL Parameters:', Array.from(urlParams.entries()));
-      
-      debug('Full URL: ' + fullUrl);
-      debug('URL Params: ' + Array.from(urlParams.entries()).map(p => p.join('=')).join(', '));
-      
-      // Check for different possible parameter names
       const googleLoginSuccess = urlParams.get('google_login');
       const email = urlParams.get('email');
-      const account = urlParams.get('account');
-      const success = urlParams.get('success');
       
       console.log('[OAuth] google_login:', googleLoginSuccess);
       console.log('[OAuth] email:', email);
-      console.log('[OAuth] account:', account);
-      console.log('[OAuth] success:', success);
       
-      debug('google_login param: ' + (googleLoginSuccess || 'NOT FOUND'));
-      debug('email param: ' + (email || 'NOT FOUND'));
-      debug('account param: ' + (account || 'NOT FOUND'));
-      debug('success param: ' + (success || 'NOT FOUND'));
-      
-      // Check if ANY oauth success indicator is present
-      const oauthSuccess = (
-        googleLoginSuccess === 'success' || 
-        success === 'true' ||
-        email ||
-        account
-      );
-      
-      const userEmail = email || account || 'user';
-      
-      if (oauthSuccess) {
-        console.log(`✅ [OAuth] Gmail authentication detected for ${userEmail}`);
-        debug('✅ OAUTH SUCCESS DETECTED!');
+      if (googleLoginSuccess === 'success' && email) {
+        console.log('[OAuth] Success detected! Redirecting to dashboard...');
         
-        // Hide login form
         document.getElementById('loginForm').style.display = 'none';
         document.getElementById('loadingIndicator').style.display = 'block';
-        document.getElementById('debugInfo').style.display = 'block';
         
-        // Show success message
         const successMsg = document.getElementById('successMessage');
-        successMsg.textContent = `✅ Gmail connected successfully! Redirecting to dashboard...`;
+        successMsg.textContent = '✅ Gmail connected successfully! Redirecting...';
         successMsg.style.display = 'block';
         
-        debug('Waiting 2 seconds before redirect...');
-        
-        // Redirect to dashboard after 2 seconds
-        setTimeout(() => {
-          console.log('[OAuth] Redirecting to dashboard...');
-          debug('→ Redirecting to /dashboard.html');
-          
-          // Try multiple possible dashboard URLs
-          const dashboardUrls = [
-            '/dashboard.html',
-            '/dashboard',
-            '/admin',
-            '/'
-          ];
-          
-          // Redirect to first one that might exist
-          window.location.href = dashboardUrls[0];
+        // Redirect to dashboard
+        setTimeout(function() {
+          window.location.href = '/dashboard.html';
         }, 2000);
-      } else {
-        console.log('[OAuth] No oauth success indicators found. Showing login form.');
-        debug('❌ NO OAUTH PARAMETERS FOUND');
-        debug('Showing login form normally');
-        
-        // Show login form
-        document.getElementById('loginForm').style.display = 'block';
-        document.getElementById('loadingIndicator').style.display = 'none';
       }
     });
 
-    // Handle admin login form submission
-    document.getElementById('loginForm').addEventListener('submit', async function(e) {
+    // Handle login form
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
       e.preventDefault();
-      
-      const email = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
-      
-      console.log('[Login] Attempting admin login for:', email);
-      
-      // Show error
       const errorMsg = document.getElementById('errorMessage');
-      errorMsg.textContent = '⚠️ Admin login not yet implemented. Please use "Sign in with Google" to connect Gmail.';
+      errorMsg.textContent = '⚠️ Admin login not implemented. Use "Sign in with Google".';
       errorMsg.style.display = 'block';
     });
 
-    // Connect Gmail via OAuth
-    function connectGmail() {
-      console.log('[OAuth] Initiating Gmail connection...');
+    // Google button click handler
+    document.getElementById('googleButton').addEventListener('click', function() {
+      console.log('[OAuth] Google button clicked! Starting OAuth flow...');
       
-      // Show loading indicator
-      document.getElementById('loadingIndicator').style.display = 'block';
-      document.getElementById('loginForm').style.display = 'none';
-      document.getElementById('debugInfo').style.display = 'block';
+      const loadingDiv = document.getElementById('loadingIndicator');
+      const loginForm = document.getElementById('loginForm');
       
-      debug('→ Starting Gmail OAuth flow...');
+      loadingDiv.style.display = 'block';
+      loginForm.style.display = 'none';
       
-      // Get default account email
-      const defaultAccount = 'kishor.merchant06@gmail.com';
+      // Redirect to OAuth
+      const account = 'kishor.merchant06@gmail.com';
+      console.log('[OAuth] Redirecting to /auth/google with account:', account);
       
-      debug('Account: ' + defaultAccount);
-      debug('Redirecting to /auth/google...');
-      
-      // Redirect to OAuth endpoint
-      console.log('[OAuth] Redirecting to /auth/google with account:', defaultAccount);
-      window.location.href = `/auth/google?account=${encodeURIComponent(defaultAccount)}`;
-    }
+      window.location.href = '/auth/google?account=' + encodeURIComponent(account);
+    });
+
+    console.log('[App] Startup complete');
   </script>
 </body>
 </html>
