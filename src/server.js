@@ -19,6 +19,30 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // =====================================================
+// EMAIL SETUP FOR NOTIFICATIONS
+// =====================================================
+
+// Configure email transporter for notifications
+const emailTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: process.env.SMTP_PORT || 587,
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER || 'noreply@kishorexports.com',
+    pass: process.env.SMTP_PASSWORD || ''
+  }
+});
+
+// Test email connection
+emailTransporter.verify((error, success) => {
+  if (error) {
+    console.error('[Email] SMTP connection failed:', error.message);
+  } else if (success) {
+    console.log('[Email] SMTP ready for sending notifications');
+  }
+});
+
+// =====================================================
 // GOOGLE OAUTH SETUP
 // =====================================================
 
@@ -42,7 +66,7 @@ function getDefaultGmailAccount() {
 }
 
 // =====================================================
-// ONLY THESE 15 SENDERS WILL BE TRACKED
+// TRACKED SENDERS
 // =====================================================
 
 const TRACKED = new Set([
@@ -77,17 +101,14 @@ function getHeader(headers, name) {
 
 function extractSenderEmail(fromHeader) {
   const match = fromHeader.match(/<(.+?)>/);
-
   if (match?.[1]) {
     return match[1].trim().toLowerCase();
   }
-
   return fromHeader.trim().toLowerCase();
 }
 
 async function getToken(email) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
-
   const { data, error } = await supabase
     .from('users')
     .select('gmail_token')
@@ -175,150 +196,151 @@ function createOAuthClient(tokens, email) {
 }
 
 // =====================================================
-// FETCH EMAILS - ONLY FROM 15 TRACKED SENDERS
+// SEND MANAGER NOTIFICATION EMAIL
 // =====================================================
 
-async function fetchAllEmails(email) {
-  const normalizedEmail = String(email || '').trim().toLowerCase();
-
-  const tokens = await getToken(normalizedEmail);
-
-  if (!tokens) {
-    console.log(`[Gmail] No token found for ${normalizedEmail}`);
-    return 0;
-  }
-
-  const client = createOAuthClient(tokens, normalizedEmail);
-
-  const gmail = google.gmail({
-    version: 'v1',
-    auth: client
-  });
-
+async function sendManagerNotification() {
   try {
-    const fiveDaysAgo = new Date();
-    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+    console.log('[Manager] Checking unreplied emails for manager notification...');
 
-    const afterDate = fiveDaysAgo.toISOString().split('T')[0];
+    const { data: unrepliedEmails, error } = await supabase
+      .from('emails')
+      .select('id, sender_email, sender_name, subject, account, received_at')
+      .eq('status', 'unreplied')
+      .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
-    const senderQuery = Array.from(TRACKED)
-      .map(sender => `from:${sender}`)
-      .join(' OR ');
+    if (error || !unrepliedEmails || unrepliedEmails.length === 0) {
+      console.log('[Manager] No unreplied emails in last 24 hours');
+      return;
+    }
 
-    const query = `in:inbox after:${afterDate} (${senderQuery})`;
+    console.log(`[Manager] Found ${unrepliedEmails.length} unreplied emails in last 24 hours`);
 
-    console.log(
-      `[Gmail] Fetching emails for ${normalizedEmail} from ${afterDate}`
-    );
+    // Group by sender
+    const emailsByDay = {};
+    for (const email of unrepliedEmails) {
+      const day = new Date(email.received_at).toLocaleDateString();
+      if (!emailsByDay[day]) emailsByDay[day] = [];
+      emailsByDay[day].push(email);
+    }
 
-    const { data: messageResult } = await gmail.users.messages.list({
-      userId: 'me',
-      q: query,
-      maxResults: 500
+    // Create email content
+    let emailContent = `
+<h2>📧 Unreplied Email Alert</h2>
+<p>Hi Manager,</p>
+<p>The following emails from important clients have not been replied to yet:</p>
+`;
+
+    for (const [day, emails] of Object.entries(emailsByDay)) {
+      emailContent += `<h3>${day} (${emails.length} emails)</h3><ul>`;
+      for (const email of emails) {
+        const timeAgo = Math.floor((Date.now() - new Date(email.received_at).getTime()) / (60 * 1000));
+        emailContent += `
+<li>
+  <strong>From:</strong> ${email.sender_name} (${email.sender_email})<br/>
+  <strong>Subject:</strong> ${email.subject}<br/>
+  <strong>Waiting for:</strong> ${timeAgo} minutes<br/>
+  <strong>Account:</strong> ${email.account}
+</li>`;
+      }
+      emailContent += '</ul>';
+    }
+
+    emailContent += `
+<p><strong>Action Required:</strong> Please ensure these emails are replied to as soon as possible.</p>
+<p>Best regards,<br/>Email Tracker System</p>
+`;
+
+    // Send email to manager
+    await emailTransporter.sendMail({
+      from: process.env.SMTP_USER || 'noreply@kishorexports.com',
+      to: 'marketing.kishorexports1@gmail.com',
+      subject: `⚠️ Alert: ${unrepliedEmails.length} Unreplied Emails`,
+      html: emailContent,
+      text: `You have ${unrepliedEmails.length} unreplied emails waiting for responses.`
     });
 
-    const messages = messageResult?.messages || [];
-
-    if (!messages.length) {
-      console.log(`[Gmail] No tracked emails found for ${normalizedEmail}`);
-      return 0;
-    }
-
-    let saved = 0;
-    let skipped = 0;
-
-    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
-
-    for (const message of messages) {
-      try {
-        const { data: existingEmail } = await supabase
-          .from('emails')
-          .select('id')
-          .eq('email_id', message.id)
-          .maybeSingle();
-
-        if (existingEmail) {
-          skipped++;
-          continue;
-        }
-
-        const { data: fullMessage } = await gmail.users.messages.get({
-          userId: 'me',
-          id: message.id,
-          format: 'full'
-        });
-
-        const headers = fullMessage.payload?.headers || [];
-
-        const fromHeader = getHeader(headers, 'From');
-        const subject = getHeader(headers, 'Subject') || '(No Subject)';
-        const receivedAtRaw = getHeader(headers, 'Date');
-
-        const senderEmail = extractSenderEmail(fromHeader);
-
-        if (!TRACKED.has(senderEmail)) {
-          skipped++;
-          continue;
-        }
-
-        const receivedDate = new Date(receivedAtRaw || Date.now());
-
-        if (Number.isNaN(receivedDate.getTime())) {
-          skipped++;
-          console.log(`[Gmail] Invalid date for email from ${senderEmail}`);
-          continue;
-        }
-
-        const receivedAt = receivedDate.toISOString();
-        const emailAge = Date.now() - receivedDate.getTime();
-
-        if (emailAge > fiveDaysMs) {
-          skipped++;
-          console.log(`[Gmail] Skipped old email from ${senderEmail}`);
-          continue;
-        }
-
-        const { error: insertError } = await supabase
-          .from('emails')
-          .insert({
-            email_id: message.id,
-            thread_id: fullMessage.threadId,
-            account: normalizedEmail,
-            sender_email: senderEmail,
-            sender_name: fromHeader.split('<')[0].trim(),
-            subject,
-            received_at: receivedAt,
-            status: 'unreplied',
-            body_preview: fullMessage.snippet || ''
-          });
-
-        if (!insertError) {
-          saved++;
-          console.log(`[Gmail] Saved email from ${senderEmail}: "${subject}"`);
-        }
-      } catch (messageError) {
-        if (!messageError.code?.includes('PGRST')) {
-          console.error(
-            `[Gmail] Error processing message ${message.id}:`,
-            messageError.message
-          );
-        }
-      }
-    }
-
-    console.log(
-      `[Gmail] Fetch complete for ${normalizedEmail}: ${saved} saved, ${skipped} skipped`
-    );
-
-    return saved;
+    console.log(`[Manager] ✅ Notification sent to manager about ${unrepliedEmails.length} unreplied emails`);
   } catch (error) {
-    console.error(`[Gmail] Fetch error for ${normalizedEmail}:`, error.message);
-    return 0;
+    console.error('[Manager] Error sending notification:', error.message);
   }
 }
 
 // =====================================================
-// CHECK FOR REPLIES - IMPROVED WITH DETAILED LOGGING
+// SEND SENDER REMINDER EMAIL
+// =====================================================
+
+async function sendSenderReminder() {
+  try {
+    console.log('[Reminder] Sending reminders to email senders...');
+
+    const { data: unrepliedEmails, error } = await supabase
+      .from('emails')
+      .select('sender_email, sender_name, subject, received_at')
+      .eq('status', 'unreplied')
+      .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+    if (error || !unrepliedEmails || unrepliedEmails.length === 0) {
+      console.log('[Reminder] No unreplied emails to remind about');
+      return;
+    }
+
+    // Group by sender email
+    const emailsBySender = {};
+    for (const email of unrepliedEmails) {
+      if (!emailsBySender[email.sender_email]) {
+        emailsBySender[email.sender_email] = [];
+      }
+      emailsBySender[email.sender_email].push(email);
+    }
+
+    // Send reminder to each sender
+    for (const [senderEmail, emails] of Object.entries(emailsBySender)) {
+      try {
+        const senderName = emails[0].sender_name || senderEmail.split('@')[0];
+        const oldestEmail = emails.reduce((oldest, current) => {
+          return new Date(current.received_at) < new Date(oldest.received_at) ? current : oldest;
+        });
+
+        const waitingTime = Math.floor((Date.now() - new Date(oldestEmail.received_at).getTime()) / (60 * 60 * 1000));
+
+        let emailContent = `
+<h2>📧 We're Waiting for Your Response</h2>
+<p>Hi ${senderName},</p>
+<p>We noticed that your email(s) to us have not been replied to. Here's a summary:</p>
+<ul>`;
+
+        for (const email of emails) {
+          emailContent += `<li><strong>${email.subject}</strong> (sent ${Math.floor((Date.now() - new Date(email.received_at).getTime()) / (60 * 1000))} minutes ago)</li>`;
+        }
+
+        emailContent += `</ul>
+<p>We're committed to excellent customer service and would love to hear from you.</p>
+<p>Please reply to any of your previous emails or reach out if you need further assistance.</p>
+<p>Best regards,<br/>Kishor Exports Team</p>
+`;
+
+        // Send email to sender
+        await emailTransporter.sendMail({
+          from: process.env.SMTP_USER || 'noreply@kishorexports.com',
+          to: senderEmail,
+          subject: `⏰ Reminder: We're Waiting for Your Response`,
+          html: emailContent,
+          text: `You have sent ${emails.length} email(s) that we haven't replied to yet. Please check your inbox.`
+        });
+
+        console.log(`[Reminder] ✅ Reminder sent to ${senderEmail} for ${emails.length} email(s)`);
+      } catch (emailError) {
+        console.error(`[Reminder] Error sending to ${senderEmail}:`, emailError.message);
+      }
+    }
+  } catch (error) {
+    console.error('[Reminder] Error:', error.message);
+  }
+}
+
+// =====================================================
+// CHECK FOR REPLIES
 // =====================================================
 
 async function checkForReplies(email) {
@@ -355,15 +377,12 @@ async function checkForReplies(email) {
     }
 
     console.log(`[Gmail] ========================================`);
-    console.log(`[Gmail] Checking ${unrepliedEmails.length} unreplied emails for ${normalizedEmail}`);
-    console.log(`[Gmail] ========================================`);
+    console.log(`[Gmail] Checking ${unrepliedEmails.length} unreplied emails`);
 
     let updated = 0;
 
     for (const emailRecord of unrepliedEmails) {
       if (!emailRecord.thread_id) {
-        console.log(`[Gmail] ⚠️  SKIPPED: "${emailRecord.subject}"`);
-        console.log(`        From: ${emailRecord.sender_email} - NO THREAD ID`);
         continue;
       }
 
@@ -375,7 +394,6 @@ async function checkForReplies(email) {
         });
 
         if (!thread) {
-          console.log(`[Gmail] ⚠️  SKIPPED: Thread ${emailRecord.thread_id} not found`);
           continue;
         }
 
@@ -384,9 +402,6 @@ async function checkForReplies(email) {
 
         console.log(`[Gmail] 🔍 CHECKING: "${emailRecord.subject}"`);
         console.log(`        From: ${emailRecord.sender_email}`);
-        console.log(`        Thread ID: ${emailRecord.thread_id}`);
-        console.log(`        Messages in thread: ${messages.length}`);
-        console.log(`        Original received: ${new Date(receivedTime).toISOString()}`);
 
         let foundReply = false;
 
@@ -396,14 +411,14 @@ async function checkForReplies(email) {
           const messageTime = Number(message.internalDate || 0);
 
           if (isSentEmail && messageTime > receivedTime) {
-            console.log(`        ✅ REPLY DETECTED - SENT at ${new Date(messageTime).toISOString()}`);
+            console.log(`        ✅ REPLY DETECTED at ${new Date(messageTime).toISOString()}`);
             foundReply = true;
             break;
           }
         }
 
         if (!foundReply) {
-          console.log(`        ❌ NO REPLY found in this thread`);
+          console.log(`        ❌ NO REPLY found`);
           continue;
         }
 
@@ -417,102 +432,129 @@ async function checkForReplies(email) {
           .eq('id', emailRecord.id);
 
         if (updateError) {
-          console.error(`[Supabase] Failed to update email ${emailRecord.id}:`, updateError.message);
+          console.error(`[Supabase] Failed to update email:`, updateError.message);
           continue;
         }
 
         updated++;
-        console.log(`        ✅ DATABASE UPDATED to REPLIED`);
-        console.log(`[Gmail] ----------------------------------------`);
+        console.log(`        ✅ DATABASE UPDATED`);
       } catch (threadError) {
-        console.error(`[Gmail] ❌ Error checking thread ${emailRecord.thread_id}:`, threadError.message);
+        console.error(`[Gmail] Error checking thread:`, threadError.message);
       }
     }
 
-    console.log(`[Gmail] ========================================`);
-    console.log(`[Gmail] REPLY CHECK COMPLETE`);
-    console.log(`[Gmail] Account: ${normalizedEmail}`);
-    console.log(`[Gmail] Total checked: ${unrepliedEmails.length}`);
-    console.log(`[Gmail] Updated to replied: ${updated}`);
-    console.log(`[Gmail] Still unreplied: ${unrepliedEmails.length - updated}`);
+    console.log(`[Gmail] Updated: ${updated} emails marked as replied`);
     console.log(`[Gmail] ========================================`);
   } catch (error) {
-    console.error(`[Gmail] Reply check error for ${normalizedEmail}:`, error.message);
+    console.error(`[Gmail] Reply check error:`, error.message);
   }
 }
 
 // =====================================================
-// SEND REMINDER EMAILS
+// FETCH ALL EMAILS
 // =====================================================
 
-async function sendReminderEmails() {
+async function fetchAllEmails(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const tokens = await getToken(normalizedEmail);
+
+  if (!tokens) {
+    console.log(`[Gmail] No token found for ${normalizedEmail}`);
+    return 0;
+  }
+
+  const client = createOAuthClient(tokens, normalizedEmail);
+  const gmail = google.gmail({ version: 'v1', auth: client });
+
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.SENDER_EMAIL,
-        pass: process.env.SENDER_PASSWORD
-      }
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+    const afterDate = fiveDaysAgo.toISOString().split('T')[0];
+
+    const senderQuery = Array.from(TRACKED)
+      .map(sender => `from:${sender}`)
+      .join(' OR ');
+
+    const query = `in:inbox after:${afterDate} (${senderQuery})`;
+
+    console.log(`[Gmail] Fetching emails for ${normalizedEmail} from ${afterDate}`);
+
+    const { data: messageResult } = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: 500
     });
 
-    const { data: unrepliedEmails } = await supabase
-      .from('emails')
-      .select('id, sender_email, subject, account')
-      .eq('status', 'unreplied');
+    const messages = messageResult?.messages || [];
 
-    if (!unrepliedEmails || unrepliedEmails.length === 0) {
-      console.log('[Reminder] No unreplied emails to remind about');
-      return;
+    if (!messages.length) {
+      console.log(`[Gmail] No tracked emails found`);
+      return 0;
     }
 
-    const { data: users } = await supabase
-      .from('users')
-      .select('account_email')
-      .eq('role', 'senior_manager');
+    let saved = 0;
+    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
 
-    if (!users || users.length === 0) {
-      console.log('[Reminder] No managers to send reminders to');
-      return;
-    }
-
-    for (const user of users) {
-      const unrepliedList = unrepliedEmails
-        .filter(e => e.account === user.account_email)
-        .map(e => `- From: ${e.sender_email}\n  Subject: ${e.subject}`)
-        .join('\n');
-
-      if (!unrepliedList) {
-        continue;
-      }
-
-      const emailContent = `
-Hello,
-
-You have ${unrepliedEmails.filter(e => e.account === user.account_email).length} unreplied emails that need your attention:
-
-${unrepliedList}
-
-Please reply to these emails at your earliest convenience.
-
-Best regards,
-Email Tracker System
-      `;
-
+    for (const message of messages) {
       try {
-        await transporter.sendMail({
-          from: process.env.SENDER_EMAIL,
-          to: user.account_email,
-          subject: `Reminder: ${unrepliedEmails.filter(e => e.account === user.account_email).length} Unreplied Emails`,
-          text: emailContent
+        const { data: existingEmail } = await supabase
+          .from('emails')
+          .select('id')
+          .eq('email_id', message.id)
+          .maybeSingle();
+
+        if (existingEmail) continue;
+
+        const { data: fullMessage } = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'full'
         });
 
-        console.log(`[Reminder] Sent reminder to ${user.account_email}`);
-      } catch (mailError) {
-        console.error(`[Reminder] Failed to send to ${user.account_email}:`, mailError.message);
+        const headers = fullMessage.payload?.headers || [];
+        const fromHeader = getHeader(headers, 'From');
+        const subject = getHeader(headers, 'Subject') || '(No Subject)';
+        const receivedAtRaw = getHeader(headers, 'Date');
+
+        const senderEmail = extractSenderEmail(fromHeader);
+
+        if (!TRACKED.has(senderEmail)) continue;
+
+        const receivedDate = new Date(receivedAtRaw || Date.now());
+        if (Number.isNaN(receivedDate.getTime())) continue;
+
+        const receivedAt = receivedDate.toISOString();
+        const emailAge = Date.now() - receivedDate.getTime();
+
+        if (emailAge > fiveDaysMs) continue;
+
+        const { error: insertError } = await supabase
+          .from('emails')
+          .insert({
+            email_id: message.id,
+            thread_id: fullMessage.threadId,
+            account: normalizedEmail,
+            sender_email: senderEmail,
+            sender_name: fromHeader.split('<')[0].trim(),
+            subject,
+            received_at: receivedAt,
+            status: 'unreplied',
+            body_preview: fullMessage.snippet || ''
+          });
+
+        if (!insertError) {
+          saved++;
+        }
+      } catch (messageError) {
+        // Continue processing
       }
     }
+
+    console.log(`[Gmail] Saved: ${saved} emails`);
+    return saved;
   } catch (error) {
-    console.error('[Reminder] Error sending reminders:', error.message);
+    console.error(`[Gmail] Fetch error:`, error.message);
+    return 0;
   }
 }
 
@@ -524,8 +566,12 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+app.get('/dashboard.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 app.get('/auth/google', (req, res) => {
@@ -539,29 +585,15 @@ app.get('/auth/google', (req, res) => {
   res.redirect(authUrl);
 });
 
-// =====================================================
-// OAUTH CALLBACK - FIXED WITH REDIRECT PARAMETERS
-// =====================================================
-
 app.get('/auth/google/callback', async (req, res) => {
   try {
     const { code, state: account } = req.query;
-
-    if (!code) {
-      return res.status(400).send('No authorization code provided');
-    }
+    if (!code) return res.status(400).send('No authorization code provided');
 
     const { tokens } = await oauth2Client.getToken(code);
-
-    if (!tokens.refresh_token) {
-      console.warn('[OAuth] No refresh token in response');
-    }
-
     await saveToken(account, tokens);
 
     console.log(`[OAuth] Successfully authenticated ${account}`);
-    
-    // ✅ FIX: Pass google_login=success and email in redirect
     res.redirect(`/?google_login=success&email=${encodeURIComponent(account)}`);
   } catch (error) {
     console.error('[OAuth] Error:', error.message);
@@ -572,22 +604,12 @@ app.get('/auth/google/callback', async (req, res) => {
 app.get('/auth/callback', async (req, res) => {
   try {
     const { code, state: account } = req.query;
-
-    if (!code) {
-      return res.status(400).send('No authorization code provided');
-    }
+    if (!code) return res.status(400).send('No authorization code provided');
 
     const { tokens } = await oauth2Client.getToken(code);
-
-    if (!tokens.refresh_token) {
-      console.warn('[OAuth] No refresh token in response');
-    }
-
     await saveToken(account, tokens);
 
     console.log(`[OAuth] Successfully authenticated ${account}`);
-    
-    // ✅ FIX: Pass google_login=success and email in redirect
     res.redirect(`/?google_login=success&email=${encodeURIComponent(account)}`);
   } catch (error) {
     console.error('[OAuth] Error:', error.message);
@@ -596,37 +618,52 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 // =====================================================
-// API: GET EMAILS
+// API ENDPOINTS
 // =====================================================
+
+app.get('/api/stats', async (req, res) => {
+  try {
+    const { data: emails, error } = await supabase
+      .from('emails')
+      .select('status, received_at');
+
+    if (error) throw error;
+
+    const records = emails || [];
+    const today = new Date().toISOString().split('T')[0];
+
+    const total = records.length;
+    const unreplied = records.filter(e => e.status === 'unreplied').length;
+    const replied = records.filter(e => e.status === 'replied').length;
+    const todayCount = records.filter(e => e.received_at.startsWith(today)).length;
+
+    res.json({ total, unreplied, replied, today: todayCount });
+  } catch (error) {
+    console.error('[API] Error loading stats:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get('/api/emails', async (req, res) => {
   try {
-    const { status, account, page = 1, limit = 50 } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const offset = (page - 1) * limit;
 
-    let query = supabase
+    const { data, count, error } = await supabase
       .from('emails')
       .select('*', { count: 'exact' })
-      .order('received_at', { ascending: false });
-
-    if (status) {
-      query = query.eq('status', status);
-    }
-
-    if (account) {
-      query = query.eq('account', account);
-    }
-
-    const { data, count, error } = await query.range(offset, offset + limit - 1);
+      .order('received_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) throw error;
 
     res.json({
-      data,
-      count,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(count / limit)
+      data: data || [],
+      count: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit)
     });
   } catch (error) {
     console.error('[API] Error fetching emails:', error.message);
@@ -634,13 +671,10 @@ app.get('/api/emails', async (req, res) => {
   }
 });
 
-// =====================================================
-// API: GET UNREPLIED EMAILS
-// =====================================================
-
 app.get('/api/emails/unreplied', async (req, res) => {
   try {
-    const { page = 1, limit = 50 } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const offset = (page - 1) * limit;
 
     const { data, count, error } = await supabase
@@ -653,11 +687,11 @@ app.get('/api/emails/unreplied', async (req, res) => {
     if (error) throw error;
 
     res.json({
-      data,
-      count,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(count / limit)
+      data: data || [],
+      count: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit)
     });
   } catch (error) {
     console.error('[API] Error fetching unreplied emails:', error.message);
@@ -665,49 +699,67 @@ app.get('/api/emails/unreplied', async (req, res) => {
   }
 });
 
-// =====================================================
-// API: GET EMAIL BODY
-// =====================================================
-
 app.get('/api/emails/:emailId/body', async (req, res) => {
   try {
-    const { data: email, error } = await supabase
+    const { data: email, error: emailError } = await supabase
       .from('emails')
       .select('*')
-      .eq('id', req.params.emailId)
-      .single();
+      .eq('email_id', req.params.emailId)
+      .maybeSingle();
 
-    if (error || !email) {
+    if (emailError || !email) {
       return res.status(404).json({ error: 'Email not found' });
     }
 
     const tokens = await getToken(email.account);
     if (!tokens) {
-      return res.status(401).json({ error: 'No auth tokens' });
+      return res.status(401).json({ error: 'No Gmail token' });
     }
 
     const client = createOAuthClient(tokens, email.account);
     const gmail = google.gmail({ version: 'v1', auth: client });
 
-    const { data: message } = await gmail.users.messages.get({
+    const { data: fullMessage } = await gmail.users.messages.get({
       userId: 'me',
-      id: email.email_id,
+      id: req.params.emailId,
       format: 'full'
     });
 
-    const body = message.payload?.parts?.[0]?.body?.data || message.payload?.body?.data || '';
-    const decodedBody = Buffer.from(body, 'base64').toString('utf-8');
+    const payload = fullMessage.payload || {};
+    let body = '';
 
-    res.json({ body: decodedBody });
+    function findMessagePart(parts, targetMimeType) {
+      for (const part of parts || []) {
+        if (part.mimeType === targetMimeType && part.body?.data) {
+          return part;
+        }
+        if (part.parts?.length) {
+          const nestedPart = findMessagePart(part.parts, targetMimeType);
+          if (nestedPart) return nestedPart;
+        }
+      }
+      return null;
+    }
+
+    if (payload.parts?.length) {
+      const htmlPart = findMessagePart(payload.parts, 'text/html');
+      const textPart = findMessagePart(payload.parts, 'text/plain');
+
+      if (htmlPart) {
+        body = Buffer.from(htmlPart.body.data, 'base64url').toString('utf8');
+      } else if (textPart) {
+        body = Buffer.from(textPart.body.data, 'base64url').toString('utf8');
+      }
+    } else if (payload.body?.data) {
+      body = Buffer.from(payload.body.data, 'base64url').toString('utf8');
+    }
+
+    res.json({ body: body || 'No content available' });
   } catch (error) {
-    console.error('[API] Error fetching email body:', error.message);
+    console.error('[API] Error loading email body:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
-
-// =====================================================
-// API: UPDATE EMAIL STATUS
-// =====================================================
 
 app.patch('/api/emails/:emailId/status', async (req, res) => {
   try {
@@ -724,190 +776,14 @@ app.patch('/api/emails/:emailId/status', async (req, res) => {
         updated_at: new Date().toISOString(),
         replied_at: status === 'replied' ? new Date().toISOString() : null
       })
-      .eq('id', req.params.emailId);
+      .eq('email_id', req.params.emailId);
 
     if (error) throw error;
 
     res.json({ success: true, status });
   } catch (error) {
-    console.error('[API] Error updating email status:', error.message);
+    console.error('[API] Error updating status:', error.message);
     res.status(500).json({ error: error.message });
-  }
-});
-
-// =====================================================
-// API: GET STATISTICS
-// =====================================================
-
-app.get('/api/stats', async (req, res) => {
-  try {
-    const { data: total } = await supabase
-      .from('emails')
-      .select('id', { count: 'exact' });
-
-    const { data: unreplied } = await supabase
-      .from('emails')
-      .select('id', { count: 'exact' })
-      .eq('status', 'unreplied');
-
-    const { data: replied } = await supabase
-      .from('emails')
-      .select('id', { count: 'exact' })
-      .eq('status', 'replied');
-
-    const { data: noreply } = await supabase
-      .from('emails')
-      .select('id', { count: 'exact' })
-      .eq('status', 'no_reply_needed');
-
-    res.json({
-      total: total?.length || 0,
-      unreplied: unreplied?.length || 0,
-      replied: replied?.length || 0,
-      no_reply_needed: noreply?.length || 0
-    });
-  } catch (error) {
-    console.error('[API] Error getting stats:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// =====================================================
-// API: GET USERS/AGENTS
-// =====================================================
-
-app.get('/api/agents', async (req, res) => {
-  try {
-    const { data: agents, error } = await supabase
-      .from('users')
-      .select('account_email, name, role');
-
-    if (error) throw error;
-
-    res.json(agents || []);
-  } catch (error) {
-    console.error('[API] Error fetching agents:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// =====================================================
-// DEBUG ENDPOINT
-// =====================================================
-
-app.get('/api/debug', async (req, res) => {
-  try {
-    const debug = {
-      timestamp: new Date().toISOString(),
-      server_status: 'running',
-      tracked_senders: Array.from(TRACKED).length,
-      issues: []
-    };
-
-    const { data: testQuery, error: testError } = await supabase
-      .from('users')
-      .select('account_email, gmail_token')
-      .limit(1);
-
-    if (testError) {
-      debug.issues.push(`Supabase connection failed: ${testError.message}`);
-      return res.json(debug);
-    }
-
-    debug.supabase = 'connected';
-
-    const { data: usersWithTokens, error: usersError } = await supabase
-      .from('users')
-      .select('account_email, gmail_token')
-      .not('gmail_token', 'is', null);
-
-    if (usersError) {
-      debug.issues.push(`Failed to fetch users: ${usersError.message}`);
-      return res.json(debug);
-    }
-
-    debug.users_with_tokens = usersWithTokens?.length || 0;
-
-    if (usersWithTokens && usersWithTokens.length > 0) {
-      for (const user of usersWithTokens) {
-        const tokens = await getToken(user.account_email);
-
-        if (!tokens) {
-          debug.issues.push(`❌ ${user.account_email}: Gmail token invalid or expired`);
-        } else {
-          debug.gmail_connected = user.account_email;
-        }
-      }
-    } else {
-      debug.issues.push('❌ No users with Gmail tokens in database');
-    }
-
-    const { data: emailCount, error: emailError } = await supabase
-      .from('emails')
-      .select('id', { count: 'exact' });
-
-    if (!emailError) {
-      debug.emails_in_database = emailCount?.length || 0;
-    }
-
-    const { data: unrepliedCount, error: unrepliedError } = await supabase
-      .from('emails')
-      .select('id', { count: 'exact' })
-      .eq('status', 'unreplied');
-
-    if (!unrepliedError) {
-      debug.unreplied_emails = unrepliedCount?.length || 0;
-    }
-
-    const { data: repliedCount, error: repliedError } = await supabase
-      .from('emails')
-      .select('id', { count: 'exact' })
-      .eq('status', 'replied');
-
-    if (!repliedError) {
-      debug.replied_emails = repliedCount?.length || 0;
-    }
-
-    return res.json(debug);
-  } catch (error) {
-    console.error('[DEBUG] Error:', error.message);
-    return res.status(500).json({
-      error: error.message
-    });
-  }
-});
-
-// =====================================================
-// MANUAL SYNC ROUTE
-// =====================================================
-
-app.get('/api/sync', async (req, res) => {
-  try {
-    const { data: users, error } = await supabase
-      .from('users')
-      .select('account_email')
-      .not('gmail_token', 'is', null);
-
-    if (error) {
-      throw error;
-    }
-
-    let totalSaved = 0;
-
-    for (const user of users || []) {
-      totalSaved += await fetchAllEmails(user.account_email);
-    }
-
-    return res.json({
-      success: true,
-      saved: totalSaved
-    });
-  } catch (error) {
-    console.error('[API] Manual synchronization failed:', error.message);
-
-    return res.status(500).json({
-      error: error.message
-    });
   }
 });
 
@@ -918,54 +794,58 @@ app.get('/api/sync', async (req, res) => {
 // Fetch emails every 5 minutes
 cron.schedule('*/5 * * * *', async () => {
   try {
-    console.log('[Cron] Starting 5-minute Gmail fetch for tracked senders');
-
+    console.log('[Cron] Starting 5-minute email fetch');
     const { data: users, error } = await supabase
       .from('users')
       .select('account_email')
       .not('gmail_token', 'is', null);
 
-    if (error) {
-      throw error;
-    }
-
-    for (const user of users || []) {
-      await fetchAllEmails(user.account_email);
+    if (!error && users) {
+      for (const user of users) {
+        await fetchAllEmails(user.account_email);
+      }
     }
   } catch (error) {
-    console.error('[Cron] Gmail fetch failed:', error.message);
+    console.error('[Cron] Fetch failed:', error.message);
   }
 });
 
-// Check replies every 15 minutes
-cron.schedule('*/15 * * * *', async () => {
+// Check replies every 5 minutes
+cron.schedule('*/5 * * * *', async () => {
   try {
-    console.log('[Cron] Starting 15-minute reply check');
-
+    console.log('[Cron] Starting 5-minute reply check');
     const { data: users, error } = await supabase
       .from('users')
       .select('account_email')
       .not('gmail_token', 'is', null);
 
-    if (error) {
-      throw error;
-    }
-
-    for (const user of users || []) {
-      await checkForReplies(user.account_email);
+    if (!error && users) {
+      for (const user of users) {
+        await checkForReplies(user.account_email);
+      }
     }
   } catch (error) {
     console.error('[Cron] Reply check failed:', error.message);
   }
 });
 
-// Send reminder emails daily at 3:30 AM
-cron.schedule('30 3 * * *', async () => {
+// Send manager notification every hour
+cron.schedule('0 * * * *', async () => {
   try {
-    console.log('[Cron] Starting daily reminder email send');
-    await sendReminderEmails();
+    console.log('[Cron] Starting hourly manager notification');
+    await sendManagerNotification();
   } catch (error) {
-    console.error('[Cron] Reminder send failed:', error.message);
+    console.error('[Cron] Manager notification failed:', error.message);
+  }
+});
+
+// Send sender reminders every 6 hours
+cron.schedule('0 */6 * * *', async () => {
+  try {
+    console.log('[Cron] Starting sender reminders');
+    await sendSenderReminder();
+  } catch (error) {
+    console.error('[Cron] Sender reminder failed:', error.message);
   }
 });
 
@@ -975,12 +855,10 @@ cron.schedule('30 3 * * *', async () => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Running on port ${PORT}`);
-  console.log(`[Server] Health check: /health`);
-  console.log(`[OAuth] Connect Gmail: /auth/google`);
-  console.log(
-    `[Tracker] Tracking only ${TRACKED.size} approved senders from the last 5 days`
-  );
-  console.log(`[Cron] Fetch emails: Every 5 minutes`);
-  console.log(`[Cron] Check replies: Every 15 minutes`);
-  console.log(`[Cron] Send reminders: Daily at 3:30 AM`);
+  console.log(`[Tracker] Tracking ${TRACKED.size} approved senders`);
+  console.log(`[Cron] Email fetch: Every 5 minutes`);
+  console.log(`[Cron] Reply check: Every 5 minutes`);
+  console.log(`[Cron] Manager notifications: Every hour`);
+  console.log(`[Cron] Sender reminders: Every 6 hours`);
+  console.log(`[Email] Manager email: marketing.kishorexports1@gmail.com`);
 });
