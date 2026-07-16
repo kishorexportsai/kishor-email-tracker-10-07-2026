@@ -5,7 +5,7 @@ const path = require('path');
 const cron = require('node-cron');
 const { google } = require('googleapis');
 const { createClient } = require('@supabase/supabase-js');
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,28 +19,42 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // =====================================================
-// EMAIL SETUP FOR NOTIFICATIONS
+// EMAIL SETUP - BREVO API
 // =====================================================
 
-// Configure email transporter for notifications
-const emailTransporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: process.env.SMTP_PORT || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER || 'noreply@kishorexports.com',
-    pass: process.env.SMTP_PASSWORD || ''
-  }
-});
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 
-// Test email connection
-emailTransporter.verify((error, success) => {
-  if (error) {
-    console.error('[Email] SMTP connection failed:', error.message);
-  } else if (success) {
-    console.log('[Email] SMTP ready for sending notifications');
+// Send email using Brevo API
+async function sendEmailViaBrevo(to, subject, htmlContent) {
+  try {
+    if (!BREVO_API_KEY) {
+      console.error('[Email] BREVO_API_KEY not set');
+      return false;
+    }
+
+    const response = await axios.post(BREVO_API_URL, {
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: htmlContent,
+      sender: { 
+        name: 'Kishor Exports', 
+        email: 'noreply@kishorexports.com' 
+      }
+    }, {
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log(`[Email] ✅ Email sent to ${to} via Brevo`);
+    return true;
+  } catch (error) {
+    console.error(`[Email] ❌ Brevo error:`, error.response?.data || error.message);
+    return false;
   }
-});
+}
 
 // =====================================================
 // GOOGLE OAUTH SETUP
@@ -263,28 +277,30 @@ async function sendManagerNotification() {
 <p>Best regards,<br/>Email Tracker System</p>
 `;
 
-    // Send email to manager
-    await emailTransporter.sendMail({
-      from: process.env.SMTP_USER || 'noreply@kishorexports.com',
-      to: 'marketing.kishorexports1@gmail.com',
-      subject: `⚠️ Alert: ${unrepliedEmails.length} Unreplied Emails`,
-      html: emailContent,
-      text: `You have ${unrepliedEmails.length} unreplied emails waiting for responses.`
-    });
+    // Send email to manager using Brevo
+    const emailSent = await sendEmailViaBrevo(
+      'marketing.kishorexports1@gmail.com',
+      `⚠️ Alert: ${unrepliedEmails.length} Unreplied Emails`,
+      emailContent
+    );
 
-    console.log(`[Manager] ✅ Notification sent to manager about ${unrepliedEmails.length} unreplied emails`);
-    
-    // Log to database
-    try {
-      await supabase.from('reminder_logs').insert({
-        email_id: null,
-        reminder_type: 'manager_notification',
-        sent_at: new Date().toISOString(),
-        recipients: 'marketing.kishorexports1@gmail.com',
-        email_count: unrepliedEmails.length
-      });
-    } catch (logError) {
-      console.error('[Manager] Could not log email send:', logError.message);
+    if (emailSent) {
+      console.log(`[Manager] ✅ Notification sent to manager about ${unrepliedEmails.length} unreplied emails`);
+      
+      // Log to database
+      try {
+        await supabase.from('reminder_logs').insert({
+          email_id: null,
+          reminder_type: 'manager_notification',
+          sent_at: new Date().toISOString(),
+          recipients: 'marketing.kishorexports1@gmail.com',
+          email_count: unrepliedEmails.length
+        });
+      } catch (logError) {
+        console.error('[Manager] Could not log email send:', logError.message);
+      }
+    } else {
+      console.error('[Manager] Failed to send email via Brevo');
     }
   } catch (error) {
     console.error('[Manager] Error sending notification:', error.message);
@@ -345,16 +361,18 @@ async function sendSenderReminder() {
 <p>Best regards,<br/>Kishor Exports Team</p>
 `;
 
-        // Send email to sender
-        await emailTransporter.sendMail({
-          from: process.env.SMTP_USER || 'noreply@kishorexports.com',
-          to: senderEmail,
-          subject: `⏰ Reminder: We're Waiting for Your Response`,
-          html: emailContent,
-          text: `You have sent ${emails.length} email(s) that we haven't replied to yet. Please check your inbox.`
-        });
+        // Send email to sender via Brevo
+        const reminderSent = await sendEmailViaBrevo(
+          senderEmail,
+          `⏰ Reminder: We're Waiting for Your Response`,
+          emailContent
+        );
 
-        console.log(`[Reminder] ✅ Reminder sent to ${senderEmail} for ${emails.length} email(s)`);
+        if (reminderSent) {
+          console.log(`[Reminder] ✅ Reminder sent to ${senderEmail} for ${emails.length} email(s)`);
+        } else {
+          console.error(`[Reminder] Failed to send reminder to ${senderEmail}`);
+        }
       } catch (emailError) {
         console.error(`[Reminder] Error sending to ${senderEmail}:`, emailError.message);
       }
