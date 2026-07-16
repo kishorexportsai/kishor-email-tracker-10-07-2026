@@ -626,7 +626,15 @@
       let html = '<table><thead><tr><th>From</th><th>Subject</th><th>Status</th><th>Date</th></tr></thead><tbody>';
       
       for (const email of emails) {
-        const date = new Date(email.received_at).toLocaleString();
+        const date = new Date(email.received_at).toLocaleString('en-US', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        });
         const status = email.status === 'unreplied' ? 'unreplied' : 'replied';
         const statusText = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
         
@@ -652,7 +660,15 @@
       document.getElementById('modalSubject').textContent = email.subject || '(No Subject)';
       document.getElementById('modalFrom').textContent = email.sender_name || '—';
       document.getElementById('modalEmail').textContent = email.sender_email || '—';
-      document.getElementById('modalDate').textContent = new Date(email.received_at).toLocaleString();
+      document.getElementById('modalDate').textContent = new Date(email.received_at).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
       document.getElementById('modalStatus').textContent = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
 
       const statusClass = email.status === 'unreplied' ? 'unreplied' : 'replied';
@@ -698,46 +714,66 @@
 
     // Mark email as replied
     async function markEmailReplied() {
-      if (!currentEmail) return;
+      if (!currentEmail || !currentEmail.id) {
+        alert('Error: Email information not found. Try refreshing the page.');
+        return;
+      }
       
       try {
-        const res = await fetch(`/api/emails/${currentEmail.email_id}/status`, {
+        console.log('[Modal] Marking email as replied. Email ID:', currentEmail.id);
+        
+        const res = await fetch(`/api/emails/${currentEmail.id}/status`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'replied' })
         });
 
+        const data = await res.json();
+        
         if (res.ok) {
-          console.log('[Modal] Email marked as replied');
-          currentEmail.status = 'replied';
+          console.log('[Modal] ✅ Email marked as replied');
           closeModal();
           loadStats(); // Refresh lists
           alert('✅ Email marked as replied!');
+        } else {
+          console.error('[Modal] Error response:', data);
+          alert('Error: ' + (data.error || 'Failed to update email'));
         }
       } catch (error) {
+        console.error('[Modal] Error:', error);
         alert('Error: ' + error.message);
       }
     }
 
     // Mark email as unreplied
     async function markEmailUnreplied() {
-      if (!currentEmail) return;
+      if (!currentEmail || !currentEmail.id) {
+        alert('Error: Email information not found. Try refreshing the page.');
+        return;
+      }
       
       try {
-        const res = await fetch(`/api/emails/${currentEmail.email_id}/status`, {
+        console.log('[Modal] Marking email as unreplied. Email ID:', currentEmail.id);
+        
+        const res = await fetch(`/api/emails/${currentEmail.id}/status`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'unreplied' })
         });
 
+        const data = await res.json();
+        
         if (res.ok) {
-          console.log('[Modal] Email marked as unreplied');
-          currentEmail.status = 'unreplied';
+          console.log('[Modal] ✅ Email marked as unreplied');
           closeModal();
           loadStats();
           alert('↩️ Email marked as unreplied!');
+        } else {
+          console.error('[Modal] Error response:', data);
+          alert('Error: ' + (data.error || 'Failed to update email'));
         }
       } catch (error) {
+        console.error('[Modal] Error:', error);
         alert('Error: ' + error.message);
       }
     }
