@@ -861,16 +861,17 @@
         if (res.ok) {
           msgEl.innerHTML = `
             <div class="alert alert-success">
-              ✅ User reminder sent!<br>
-              Email: <strong>kishor.merchant06@gmail.com</strong>
+              User reminder test completed.<br>
+              ${data.message || 'User reminder workflow completed.'}<br>
+              Recipient: <strong>kishor.merchant06@gmail.com</strong>
             </div>
           `;
           setTimeout(loadEmailHistory, 1000);
         } else {
-          msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${data.error}</div>`;
+          msgEl.innerHTML = `<div class="alert alert-info">Error: ${data.message || data.error || 'Email failed'}</div>`;
         }
       } catch (error) {
-        msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${error.message}</div>`;
+        msgEl.innerHTML = `<div class="alert alert-info">Error: ${error.message}</div>`;
       }
     }
 
@@ -886,16 +887,17 @@
         if (res.ok) {
           msgEl.innerHTML = `
             <div class="alert alert-success">
-              ✅ Manager alert check completed!<br>
-              If user didn't reply in 24 hours, alert sent to: <strong>marketing.kishorexports1@gmail.com</strong>
+              Manager alert test completed.<br>
+              ${data.message || 'Manager alert workflow completed.'}<br>
+              Recipient: <strong>marketing.kishorexports1@gmail.com</strong>
             </div>
           `;
           setTimeout(loadEmailHistory, 1000);
         } else {
-          msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${data.error}</div>`;
+          msgEl.innerHTML = `<div class="alert alert-info">Error: ${data.message || data.error || 'Email failed'}</div>`;
         }
       } catch (error) {
-        msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${error.message}</div>`;
+        msgEl.innerHTML = `<div class="alert alert-info">Error: ${error.message}</div>`;
       }
     }
 
