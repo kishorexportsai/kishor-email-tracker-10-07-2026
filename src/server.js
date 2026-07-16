@@ -540,7 +540,7 @@ app.get('/auth/google', (req, res) => {
 });
 
 // =====================================================
-// OAUTH CALLBACK - FIXED TO REDIRECT TO HOME PAGE
+// OAUTH CALLBACK - FIXED WITH REDIRECT PARAMETERS
 // =====================================================
 
 app.get('/auth/google/callback', async (req, res) => {
@@ -560,7 +560,9 @@ app.get('/auth/google/callback', async (req, res) => {
     await saveToken(account, tokens);
 
     console.log(`[OAuth] Successfully authenticated ${account}`);
-    res.redirect(`/`);
+    
+    // ✅ FIX: Pass google_login=success and email in redirect
+    res.redirect(`/?google_login=success&email=${encodeURIComponent(account)}`);
   } catch (error) {
     console.error('[OAuth] Error:', error.message);
     res.status(500).send(`Authentication failed: ${error.message}`);
@@ -584,7 +586,9 @@ app.get('/auth/callback', async (req, res) => {
     await saveToken(account, tokens);
 
     console.log(`[OAuth] Successfully authenticated ${account}`);
-    res.redirect(`/`);
+    
+    // ✅ FIX: Pass google_login=success and email in redirect
+    res.redirect(`/?google_login=success&email=${encodeURIComponent(account)}`);
   } catch (error) {
     console.error('[OAuth] Error:', error.message);
     res.status(500).send(`Authentication failed: ${error.message}`);
