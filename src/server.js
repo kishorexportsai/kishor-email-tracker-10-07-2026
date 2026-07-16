@@ -1,970 +1,1002 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kishor Exports - Email Tracker Dashboard</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+require('dotenv').config();
+
+const express = require('express');
+const path = require('path');
+const cron = require('node-cron');
+const { google } = require('googleapis');
+const { createClient } = require('@supabase/supabase-js');
+const axios = require('axios');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+
+app.use(express.json());
+app.use(express.static(__dirname));
+
+// =====================================================
+// EMAIL SETUP - BREVO API
+// =====================================================
+
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+
+// Send email using Brevo API
+async function sendEmailViaBrevo(to, subject, htmlContent) {
+  try {
+    if (!BREVO_API_KEY) {
+      console.error('[Email] BREVO_API_KEY not set');
+      return false;
     }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f0f2f5;
-      color: #333;
-    }
-
-    .sidebar {
-      position: fixed;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 250px;
-      background: #1E3A5F;
-      color: white;
-      padding: 20px;
-      overflow-y: auto;
-      z-index: 100;
-    }
-
-    .sidebar h1 {
-      font-size: 18px;
-      margin-bottom: 30px;
-      border-bottom: 1px solid rgba(255,255,255,0.2);
-      padding-bottom: 15px;
-    }
-
-    .nav-item {
-      padding: 12px 0;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all 0.3s;
-      border-left: 3px solid transparent;
-      padding-left: 10px;
-    }
-
-    .nav-item:hover {
-      background: rgba(255,255,255,0.1);
-      border-left-color: #2E86C1;
-    }
-
-    .nav-item.active {
-      background: rgba(46,134,193,0.2);
-      border-left-color: #2E86C1;
-      font-weight: 600;
-    }
-
-    .logout-btn {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
-      padding: 10px;
-      background: rgba(255,255,255,0.1);
-      border: none;
-      color: white;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    .logout-btn:hover {
-      background: rgba(231,76,60,0.4);
-    }
-
-    .main {
-      margin-left: 250px;
-      padding: 30px;
-    }
-
-    .header {
-      margin-bottom: 30px;
-    }
-
-    .header h1 {
-      font-size: 28px;
-      color: #1E3A5F;
-      margin-bottom: 5px;
-    }
-
-    .header p {
-      color: #888;
-      font-size: 14px;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-
-    .stat-card {
-      background: white;
-      border-radius: 10px;
-      padding: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      border-left: 4px solid #2E86C1;
-    }
-
-    .stat-card.unreplied {
-      border-left-color: #E74C3C;
-    }
-
-    .stat-card.replied {
-      border-left-color: #27AE60;
-    }
-
-    .stat-label {
-      font-size: 12px;
-      color: #888;
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-
-    .stat-value {
-      font-size: 32px;
-      font-weight: 700;
-      color: #1E3A5F;
-    }
-
-    .card {
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      overflow: hidden;
-      margin-bottom: 20px;
-    }
-
-    .card-header {
-      padding: 20px;
-      border-bottom: 1px solid #f0f0f0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .card-header h2 {
-      font-size: 16px;
-      color: #1E3A5F;
-    }
-
-    .btn-refresh {
-      padding: 8px 16px;
-      background: #2E86C1;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    .btn-refresh:hover {
-      background: #1E5A96;
-    }
-
-    .btn {
-      padding: 10px 16px;
-      background: #2E86C1;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      transition: all 0.3s;
-    }
-
-    .btn:hover {
-      background: #1E5A96;
-      transform: translateY(-2px);
-    }
-
-    .btn-success {
-      background: #27AE60;
-    }
-
-    .btn-success:hover {
-      background: #1e8449;
-    }
-
-    .card-body {
-      padding: 20px;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    th {
-      padding: 12px 0;
-      text-align: left;
-      font-size: 12px;
-      color: #888;
-      text-transform: uppercase;
-      border-bottom: 1px solid #f0f0f0;
-      font-weight: 600;
-    }
-
-    td {
-      padding: 12px 0;
-      font-size: 13px;
-      border-bottom: 1px solid #f5f5f5;
-    }
-
-    tr.clickable {
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    tr.clickable:hover {
-      background: #f9f9f9;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-    }
-
-    .badge.unreplied {
-      background: #fde8e8;
-      color: #e74c3c;
-    }
-
-    .badge.replied {
-      background: #e8f8ee;
-      color: #27AE60;
-    }
-
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: #888;
-    }
-
-    .spinner {
-      display: inline-block;
-      width: 30px;
-      height: 30px;
-      border: 3px solid #f3f3f3;
-      border-top: 3px solid #2E86C1;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 15px;
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .page {
-      display: none;
-    }
-
-    .page.active {
-      display: block;
-    }
-
-    /* MODAL STYLES */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 1000;
-    }
-
-    .modal-overlay.open {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal {
-      background: white;
-      border-radius: 10px;
-      width: 90%;
-      max-width: 700px;
-      max-height: 90vh;
-      overflow-y: auto;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-    }
-
-    .modal-header {
-      padding: 20px;
-      border-bottom: 1px solid #f0f0f0;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      background: #1E3A5F;
-      color: white;
-    }
-
-    .modal-header h2 {
-      font-size: 16px;
-      flex: 1;
-      word-break: break-word;
-    }
-
-    .modal-close {
-      background: none;
-      border: none;
-      color: white;
-      font-size: 24px;
-      cursor: pointer;
-      width: 30px;
-      height: 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal-body {
-      padding: 20px;
-    }
-
-    .email-info {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 15px;
-      margin-bottom: 20px;
-      padding-bottom: 20px;
-      border-bottom: 1px solid #f0f0f0;
-    }
-
-    .info-group label {
-      font-size: 11px;
-      color: #888;
-      text-transform: uppercase;
-      display: block;
-      margin-bottom: 5px;
-    }
-
-    .info-group span {
-      font-size: 13px;
-      color: #333;
-      font-weight: 500;
-      word-break: break-all;
-    }
-
-    .email-content {
-      background: #f9f9f9;
-      padding: 15px;
-      border-radius: 5px;
-      margin-bottom: 20px;
-      max-height: 400px;
-      overflow-y: auto;
-      font-size: 13px;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
-
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-      padding-top: 20px;
-      border-top: 1px solid #f0f0f0;
-    }
-
-    .modal-actions .btn {
-      flex: 1;
-      padding: 10px;
-    }
-
-    .alert {
-      padding: 15px;
-      border-radius: 5px;
-      margin-bottom: 15px;
-      font-size: 13px;
-    }
-
-    .alert-success {
-      background: #e8f5e9;
-      color: #2E7D32;
-      border-left: 4px solid #27AE60;
-    }
-
-    .alert-info {
-      background: #e3f2fd;
-      color: #1565C0;
-      border-left: 4px solid #2196F3;
-    }
-
-    .button-group {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-
-    .info-box {
-      background: #f9f9f9;
-      padding: 15px;
-      border-radius: 5px;
-      margin-bottom: 20px;
-      border-left: 4px solid #2E86C1;
-    }
-
-    .badge-manager {
-      background: #e3f2fd;
-      color: #1565C0;
-    }
-
-    .badge-sender {
-      background: #f3e5f5;
-      color: #6A1B9A;
-    }
-  </style>
-</head>
-<body>
-  <!-- SIDEBAR -->
-  <div class="sidebar">
-    <h1>📧 Email Tracker</h1>
-    
-    <div class="nav-item active" onclick="showPage('dashboard')">📊 Dashboard</div>
-    <div class="nav-item" onclick="showPage('unreplied')">⚠️ Unreplied</div>
-    <div class="nav-item" onclick="showPage('all')">📬 All Emails</div>
-    <div class="nav-item" onclick="showPage('test')">🧪 Test & Logs</div>
-    
-    <button class="logout-btn" onclick="logout()">🚪 Sign Out</button>
-  </div>
-
-  <!-- MAIN CONTENT -->
-  <div class="main">
-    <!-- DASHBOARD PAGE -->
-    <div class="page active" id="pageDashboard">
-      <div class="header">
-        <h1>Dashboard</h1>
-        <p>Email tracking and management system</p>
-      </div>
-
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Total Emails</div>
-          <div class="stat-value" id="statTotal">—</div>
-        </div>
-        <div class="stat-card unreplied">
-          <div class="stat-label">Unreplied</div>
-          <div class="stat-value" id="statUnreplied">—</div>
-        </div>
-        <div class="stat-card replied">
-          <div class="stat-label">Replied</div>
-          <div class="stat-value" id="statReplied">—</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>📧 Recent Emails</h2>
-          <button class="btn-refresh" onclick="loadStats()">🔄 Refresh</button>
-        </div>
-        <div class="card-body" id="emailList">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading emails...
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- UNREPLIED PAGE -->
-    <div class="page" id="pageUnreplied">
-      <div class="header">
-        <h1>⚠️ Unreplied Emails</h1>
-        <p>Emails that need attention - Click to view details</p>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>Unreplied Emails</h2>
-          <button class="btn-refresh" onclick="loadUnreplied()">🔄 Refresh</button>
-        </div>
-        <div class="card-body" id="unrepliedList">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading emails...
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ALL EMAILS PAGE -->
-    <div class="page" id="pageAll">
-      <div class="header">
-        <h1>📬 All Emails</h1>
-        <p>Complete email history - Click to view details</p>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>Email History</h2>
-          <button class="btn-refresh" onclick="loadAllEmails()">🔄 Refresh</button>
-        </div>
-        <div class="card-body" id="allEmailList">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading emails...
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TEST & LOGS PAGE -->
-    <div class="page" id="pageTest">
-      <div class="header">
-        <h1>🧪 Email Testing & Logs</h1>
-        <p>Test reminder emails and view sending history</p>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>📧 Test Email Features</h2>
-        </div>
-        <div class="card-body">
-          <div class="info-box">
-            <strong>ℹ️ How it works:</strong><br>
-            <strong>1. Reminder to User:</strong> Every hour, kishor.merchant06@gmail.com gets a reminder about unreplied emails.<br>
-            <strong>2. Manager Alert:</strong> If user doesn't reply after 24 hours, manager (marketing.kishorexports1@gmail.com) gets an urgent alert.<br>
-            <br>
-            Click the buttons below to test the system immediately.
-          </div>
-
-          <div class="button-group">
-            <button class="btn btn-success" onclick="testUserReminder()">👤 Test Reminder to User</button>
-            <button class="btn btn-success" onclick="testManagerAlert()">🚨 Test Manager Alert</button>
-            <button class="btn" onclick="loadEmailHistory()">🔄 Refresh History</button>
-          </div>
-
-          <div id="testMessage"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>📜 Email Sending History</h2>
-        </div>
-        <div class="card-body" id="historyContainer">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading email history...
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>ℹ️ Automated Email Schedule</h2>
-        </div>
-        <div class="card-body">
-          <table>
-            <thead>
-              <tr>
-                <th>Email Type</th>
-                <th>Frequency</th>
-                <th>Recipient</th>
-                <th>Purpose</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><span class="badge badge-manager">User Reminder</span></td>
-                <td>Every hour</td>
-                <td>kishor.merchant06@gmail.com</td>
-                <td>Reminds user about unreplied emails</td>
-              </tr>
-              <tr>
-                <td><span class="badge badge-sender">Manager Alert</span></td>
-                <td>Daily at 3:30 AM</td>
-                <td>marketing.kishorexports1@gmail.com</td>
-                <td>Alerts manager if user didn't reply after 24 hours</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- EMAIL MODAL -->
-  <div class="modal-overlay" id="emailModal">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 id="modalSubject">Email Subject</h2>
-        <button class="modal-close" onclick="closeModal()">×</button>
-      </div>
-      <div class="modal-body">
-        <div id="statusBadge"></div>
-
-        <div class="email-info">
-          <div class="info-group">
-            <label>From</label>
-            <span id="modalFrom">—</span>
-          </div>
-          <div class="info-group">
-            <label>Email</label>
-            <span id="modalEmail">—</span>
-          </div>
-          <div class="info-group">
-            <label>Received</label>
-            <span id="modalDate">—</span>
-          </div>
-          <div class="info-group">
-            <label>Status</label>
-            <span id="modalStatus">—</span>
-          </div>
-        </div>
-
-        <label style="font-size: 11px; color: #888; text-transform: uppercase; display: block; margin-bottom: 10px;">Email Content</label>
-        <div class="email-content" id="modalContent">
-          Loading content...
-        </div>
-
-        <div class="modal-actions">
-          <button class="btn btn-success" id="markRepliedBtn" onclick="markEmailReplied()">✅ Mark as Replied</button>
-          <button class="btn" onclick="closeModal()">Cancel</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    console.log('[Dashboard] Page loaded');
-
-    let currentEmail = null;
-
-    // Navigation
-    function showPage(pageName) {
-      console.log('[Dashboard] Showing page:', pageName);
-      
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-      
-      document.getElementById('page' + pageName.charAt(0).toUpperCase() + pageName.slice(1)).classList.add('active');
-      event.target.classList.add('active');
-      
-      if (pageName === 'dashboard') loadStats();
-      if (pageName === 'unreplied') loadUnreplied();
-      if (pageName === 'all') loadAllEmails();
-      if (pageName === 'test') loadEmailHistory();
-    }
-
-    // Logout
-    function logout() {
-      if (confirm('Are you sure you want to sign out?')) {
-        localStorage.clear();
-        window.location.href = '/';
+    const response = await axios.post(BREVO_API_URL, {
+      to: [{ email: to }],
+      subject: subject,
+      htmlContent: htmlContent,
+      sender: { 
+        name: 'Kishor Exports', 
+        email: 'noreply@kishorexports.com' 
       }
+    }, {
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log(`[Email] ✅ Email sent to ${to} via Brevo`);
+    return true;
+  } catch (error) {
+    console.error(`[Email] ❌ Brevo error:`, error.response?.data || error.message);
+    return false;
+  }
+}
+
+// =====================================================
+// GOOGLE OAUTH SETUP
+// =====================================================
+
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  process.env.GMAIL_REDIRECT_URI
+);
+
+const GMAIL_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/userinfo.email'
+];
+
+function getDefaultGmailAccount() {
+  return (process.env.GMAIL_ACCOUNTS || '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean)[0] || '';
+}
+
+// =====================================================
+// TRACKED SENDERS - EXTERNAL ONLY
+// =====================================================
+
+const TRACKED = new Set([
+  'nirvana.balsingh@wefashion.com',
+  'ilona.van.de.schootbrugge@wefashion.com',
+  'kurt@kurtklingberg.se',
+  'cg@carebyme.dk',
+  'ivy.ho@polarnopyret.se',
+  'jo@lakor.dk',
+  'stine@lakor.dk',
+  'johnny.lai@polarnopyret.se',
+  'rishabh.shrivastava@ul.com',
+  'jeppe@lakor.dk',
+  'fiona@littleones.ie',
+  'mg@carebyme.dk',
+  'bettina@gai-lisva.com',
+  'camillad@luxkids.dk',
+  'emma@emmamalena.com'
+].map(email => email.toLowerCase()));
+
+// =====================================================
+// INTERNAL EMAILS TO EXCLUDE (DO NOT TRACK)
+// =====================================================
+
+const INTERNAL_DOMAINS = new Set([
+  'kishor.merchant06@gmail.com',
+  'kishor.merchant24@gmail.com',
+  'admin@kishorexports.com',
+  'kishorexports@gmail.com',
+  'noreply@kishorexports.com'
+].map(email => email.toLowerCase()));
+
+// =====================================================
+// UTILITY FUNCTIONS
+// =====================================================
+
+function getHeader(headers, name) {
+  return (
+    headers.find(
+      header => header.name.toLowerCase() === name.toLowerCase()
+    )?.value || ''
+  );
+}
+
+function extractSenderEmail(fromHeader) {
+  const match = fromHeader.match(/<(.+?)>/);
+  if (match?.[1]) {
+    return match[1].trim().toLowerCase();
+  }
+  return fromHeader.trim().toLowerCase();
+}
+
+async function getToken(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const { data, error } = await supabase
+    .from('users')
+    .select('gmail_token')
+    .eq('account_email', normalizedEmail)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[Supabase] Failed to load token for ${normalizedEmail}:`, error.message);
+    return null;
+  }
+
+  if (!data?.gmail_token) {
+    return null;
+  }
+
+  try {
+    return typeof data.gmail_token === 'string'
+      ? JSON.parse(data.gmail_token)
+      : data.gmail_token;
+  } catch (error) {
+    console.error(`[Token] Invalid Gmail token for ${normalizedEmail}`);
+    return null;
+  }
+}
+
+async function saveToken(email, tokens) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    throw new Error('Account email is missing while saving Gmail token.');
+  }
+
+  const { data: existingUser, error: findError } = await supabase
+    .from('users')
+    .select('account_email')
+    .eq('account_email', normalizedEmail)
+    .maybeSingle();
+
+  if (findError) {
+    throw findError;
+  }
+
+  if (!existingUser) {
+    throw new Error(
+      `No user row found for ${normalizedEmail}. Add this email to the users table under account_email first.`
+    );
+  }
+
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({
+      gmail_token: JSON.stringify(tokens)
+    })
+    .eq('account_email', normalizedEmail);
+
+  if (updateError) {
+    throw updateError;
+  }
+}
+
+function createOAuthClient(tokens, email) {
+  const client = new google.auth.OAuth2(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    process.env.GMAIL_REDIRECT_URI
+  );
+
+  client.setCredentials(tokens);
+
+  client.on('tokens', async newTokens => {
+    try {
+      const mergedTokens = {
+        ...tokens,
+        ...newTokens
+      };
+
+      await saveToken(email, mergedTokens);
+      console.log(`[OAuth] Refreshed token saved for ${email}`);
+    } catch (error) {
+      console.error(`[OAuth] Failed to save refreshed token for ${email}:`, error.message);
+    }
+  });
+
+  return client;
+}
+
+// =====================================================
+// SEND REMINDER TO USER (kishor.merchant06@gmail.com)
+// =====================================================
+
+async function sendReminderToUser() {
+  try {
+    console.log('[UserReminder] Sending reminder to user about unreplied emails...');
+
+    const { data: unrepliedEmails, error } = await supabase
+      .from('emails')
+      .select('id, sender_email, sender_name, subject, received_at')
+      .eq('status', 'unreplied')
+      .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+    if (error || !unrepliedEmails || unrepliedEmails.length === 0) {
+      console.log('[UserReminder] No unreplied emails in last 24 hours');
+      return;
     }
 
-    // Load statistics
-    async function loadStats() {
+    console.log(`[UserReminder] Found ${unrepliedEmails.length} unreplied emails`);
+
+    let emailContent = `
+<h2>📧 Please Reply to These Emails</h2>
+<p>Hi Kishor,</p>
+<p>You have <strong>${unrepliedEmails.length} unreplied emails</strong> waiting for responses from important clients.</p>
+<p>Please reply to them as soon as possible:</p>
+<ul>`;
+
+    for (const email of unrepliedEmails) {
+      const timeAgo = Math.floor((Date.now() - new Date(email.received_at).getTime()) / (60 * 1000));
+      emailContent += `
+<li>
+  <strong>From:</strong> ${email.sender_name} (${email.sender_email})<br/>
+  <strong>Subject:</strong> ${email.subject}<br/>
+  <strong>Waiting for:</strong> ${timeAgo} minutes
+</li>`;
+    }
+
+    emailContent += `</ul>
+<p><strong>Action Required:</strong> Please reply to these emails as soon as possible.</p>
+<p>Best regards,<br/>Email Tracker System</p>
+`;
+
+    const userSent = await sendEmailViaBrevo(
+      'kishor.merchant06@gmail.com',
+      `⚠️ Please Reply: ${unrepliedEmails.length} Unreplied Emails`,
+      emailContent
+    );
+
+    if (userSent) {
+      console.log(`[UserReminder] ✅ Reminder sent to user about ${unrepliedEmails.length} unreplied emails`);
+      
       try {
-        const res = await fetch('/api/stats');
-        const stats = await res.json();
-        
-        document.getElementById('statTotal').textContent = stats.total || 0;
-        document.getElementById('statUnreplied').textContent = stats.unreplied || 0;
-        document.getElementById('statReplied').textContent = stats.replied || 0;
-        
-        const emailRes = await fetch('/api/emails?limit=20');
-        const emailData = await emailRes.json();
-        
-        renderEmailTable(emailData.data || [], 'emailList');
-      } catch (error) {
-        console.error('[Dashboard] Error loading stats:', error);
-        document.getElementById('emailList').innerHTML = `<div style="color: #e74c3c;">Error: ${error.message}</div>`;
-      }
-    }
-
-    // Load unreplied emails
-    async function loadUnreplied() {
-      try {
-        const res = await fetch('/api/emails/unreplied?limit=100');
-        const data = await res.json();
-        renderEmailTable(data.data || [], 'unrepliedList');
-      } catch (error) {
-        console.error('[Dashboard] Error loading unreplied:', error);
-        document.getElementById('unrepliedList').innerHTML = `<div style="color: #e74c3c;">Error: ${error.message}</div>`;
-      }
-    }
-
-    // Load all emails
-    async function loadAllEmails() {
-      try {
-        const res = await fetch('/api/emails?limit=100');
-        const data = await res.json();
-        renderEmailTable(data.data || [], 'allEmailList');
-      } catch (error) {
-        console.error('[Dashboard] Error loading all emails:', error);
-        document.getElementById('allEmailList').innerHTML = `<div style="color: #e74c3c;">Error: ${error.message}</div>`;
-      }
-    }
-
-    // Render email table with clickable rows
-    function renderEmailTable(emails, containerId) {
-      if (!emails || emails.length === 0) {
-        document.getElementById(containerId).innerHTML = '<div style="text-align: center; padding: 40px; color: #888;">No emails found</div>';
-        return;
-      }
-
-      let html = '<table><thead><tr><th>From</th><th>Subject</th><th>Status</th><th>Date</th></tr></thead><tbody>';
-      
-      for (const email of emails) {
-        const date = new Date(email.received_at).toLocaleString('en-US', {
-          year: 'numeric',
-          month: 'numeric',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-          timeZone: 'Asia/Kolkata'
+        await supabase.from('reminder_logs').insert({
+          reminder_type: 'user_reminder',
+          sent_at: new Date().toISOString(),
+          recipients: 'kishor.merchant06@gmail.com',
+          email_count: unrepliedEmails.length
         });
-        const status = email.status === 'unreplied' ? 'unreplied' : 'replied';
-        const statusText = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
-        
-        html += `
-          <tr class="clickable" onclick="openEmailModal(${JSON.stringify(email).replace(/"/g, '&quot;')})">
-            <td><strong>${email.sender_name || email.sender_email}</strong></td>
-            <td>${email.subject || '(No Subject)'}</td>
-            <td><span class="badge ${status}">${statusText}</span></td>
-            <td>${date}</td>
-          </tr>
-        `;
+      } catch (logError) {
+        console.error('[UserReminder] Could not log email send:', logError.message);
       }
-      
-      html += '</tbody></table>';
-      document.getElementById(containerId).innerHTML = html;
+    } else {
+      console.error('[UserReminder] Failed to send reminder to user');
+    }
+  } catch (error) {
+    console.error('[UserReminder] Error:', error.message);
+  }
+}
+
+// =====================================================
+// SEND SENDER REMINDER EMAIL
+// =====================================================
+
+// =====================================================
+// CHECK IF USER REPLIED - THEN ALERT MANAGER
+// =====================================================
+
+async function checkUserReplyAndAlertManager() {
+  try {
+    console.log('[ManagerAlert] Checking if user replied to emails...');
+
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: stillUnrepliedEmails, error } = await supabase
+      .from('emails')
+      .select('id, sender_email, sender_name, subject, received_at')
+      .eq('status', 'unreplied')
+      .lt('received_at', oneDayAgo);
+
+    if (error || !stillUnrepliedEmails || stillUnrepliedEmails.length === 0) {
+      console.log('[ManagerAlert] All emails have been replied! No alert needed.');
+      return;
     }
 
-    // Open email modal
-    async function openEmailModal(email) {
-      console.log('[Modal] Opening email:', email.id);
-      currentEmail = email;
+    console.log(`[ManagerAlert] Found ${stillUnrepliedEmails.length} emails still unreplied after 24 hours`);
 
-      document.getElementById('modalSubject').textContent = email.subject || '(No Subject)';
-      document.getElementById('modalFrom').textContent = email.sender_name || '—';
-      document.getElementById('modalEmail').textContent = email.sender_email || '—';
-      document.getElementById('modalDate').textContent = new Date(email.received_at).toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-        timeZone: 'Asia/Kolkata'
-      });
-      document.getElementById('modalStatus').textContent = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
+    let emailContent = `
+<h2>🚨 URGENT: User Did Not Reply to Emails</h2>
+<p>Hi Manager,</p>
+<p>User (kishor.merchant06@gmail.com) was reminded about unreplied emails <strong>24 hours ago</strong>, but still has NOT replied to the following emails:</p>
+<ul>`;
 
-      const statusClass = email.status === 'unreplied' ? 'unreplied' : 'replied';
-      const statusText = email.status === 'unreplied' ? '⚠️ Unreplied' : '✅ Replied';
-      document.getElementById('statusBadge').innerHTML = `<div class="badge ${statusClass}" style="padding: 8px 15px; font-size: 12px;">${statusText}</div>`;
-
-      // Load email body
-      try {
-        const bodyRes = await fetch(`/api/emails/${email.id}/body`);
-        const bodyData = await bodyRes.json();
-        document.getElementById('modalContent').textContent = bodyData.body || 'No content available';
-      } catch (error) {
-        document.getElementById('modalContent').textContent = `Error loading content: ${error.message}`;
-      }
-
-      // Set button states
-      const markBtn = document.getElementById('markRepliedBtn');
-      if (email.status === 'replied') {
-        markBtn.textContent = '↩️ Mark as Unreplied';
-        markBtn.onclick = () => markEmailUnreplied();
-      } else {
-        markBtn.textContent = '✅ Mark as Replied';
-        markBtn.onclick = () => markEmailReplied();
-      }
-
-      document.getElementById('emailModal').classList.add('open');
+    for (const email of stillUnrepliedEmails) {
+      const hoursWaiting = Math.floor((Date.now() - new Date(email.received_at).getTime()) / (60 * 60 * 1000));
+      emailContent += `
+<li>
+  <strong>From:</strong> ${email.sender_name} (${email.sender_email})<br/>
+  <strong>Subject:</strong> ${email.subject}<br/>
+  <strong>Waiting for:</strong> ${hoursWaiting} hours
+</li>`;
     }
 
-    // Close modal
-    function closeModal() {
-      document.getElementById('emailModal').classList.remove('open');
-      currentEmail = null;
-    }
+    emailContent += `</ul>
+<p><strong>Status:</strong> User was sent a reminder but has NOT replied yet.</p>
+<p><strong>Action Required:</strong> Please follow up with the user immediately.</p>
+<p>Best regards,<br/>Email Tracker System</p>
+`;
 
-    // Mark email as replied
-    async function markEmailReplied() {
-      if (!currentEmail || !currentEmail.id) {
-        alert('Error: Email information not found.');
-        return;
-      }
+    const managerSent = await sendEmailViaBrevo(
+      'marketing.kishorexports1@gmail.com',
+      `🚨 URGENT: User Did Not Reply - ${stillUnrepliedEmails.length} Unreplied Emails`,
+      emailContent
+    );
+
+    if (managerSent) {
+      console.log(`[ManagerAlert] ✅ Alert sent to manager about ${stillUnrepliedEmails.length} unreplied emails after 24 hours`);
       
       try {
-        const res = await fetch(`/api/emails/${currentEmail.id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'replied' })
+        await supabase.from('reminder_logs').insert({
+          reminder_type: 'manager_alert_24h',
+          sent_at: new Date().toISOString(),
+          recipients: 'marketing.kishorexports1@gmail.com',
+          email_count: stillUnrepliedEmails.length
+        });
+      } catch (logError) {
+        console.error('[ManagerAlert] Could not log email send:', logError.message);
+      }
+    } else {
+      console.error('[ManagerAlert] Failed to send alert to manager');
+    }
+  } catch (error) {
+    console.error('[ManagerAlert] Error:', error.message);
+  }
+}
+
+// =====================================================
+// CHECK FOR REPLIES
+// =====================================================
+
+async function checkForReplies(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  const tokens = await getToken(normalizedEmail);
+
+  if (!tokens) {
+    console.log(`[Gmail] No token found for reply check: ${normalizedEmail}`);
+    return;
+  }
+
+  const client = createOAuthClient(tokens, normalizedEmail);
+
+  const gmail = google.gmail({
+    version: 'v1',
+    auth: client
+  });
+
+  try {
+    const { data: unrepliedEmails, error: fetchError } = await supabase
+      .from('emails')
+      .select('id, thread_id, received_at, account, sender_email, subject')
+      .eq('status', 'unreplied')
+      .eq('account', normalizedEmail);
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    if (!unrepliedEmails || unrepliedEmails.length === 0) {
+      console.log(`[Gmail] No unreplied emails to check for ${normalizedEmail}`);
+      return;
+    }
+
+    console.log(`[Gmail] ========================================`);
+    console.log(`[Gmail] Checking ${unrepliedEmails.length} unreplied emails`);
+
+    let updated = 0;
+
+    for (const emailRecord of unrepliedEmails) {
+      if (!emailRecord.thread_id) {
+        continue;
+      }
+
+      try {
+        const { data: thread } = await gmail.users.threads.get({
+          userId: 'me',
+          id: emailRecord.thread_id,
+          format: 'metadata'
         });
 
-        if (res.ok) {
-          closeModal();
-          loadStats();
-          alert('✅ Email marked as replied!');
-        } else {
-          alert('Error: Failed to update email');
+        if (!thread) {
+          continue;
         }
-      } catch (error) {
-        alert('Error: ' + error.message);
+
+        const messages = thread.messages || [];
+        const receivedTime = new Date(emailRecord.received_at).getTime();
+
+        console.log(`[Gmail] 🔍 CHECKING: "${emailRecord.subject}"`);
+        console.log(`        From: ${emailRecord.sender_email}`);
+
+        let foundReply = false;
+
+        for (const message of messages) {
+          const labels = message.labelIds || [];
+          const isSentEmail = labels.includes('SENT');
+          const messageTime = Number(message.internalDate || 0);
+
+          if (isSentEmail && messageTime > receivedTime) {
+            console.log(`        ✅ REPLY DETECTED at ${new Date(messageTime).toISOString()}`);
+            foundReply = true;
+            break;
+          }
+        }
+
+        if (!foundReply) {
+          console.log(`        ❌ NO REPLY found`);
+          continue;
+        }
+
+        const { error: updateError } = await supabase
+          .from('emails')
+          .update({
+            status: 'replied',
+            replied_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', emailRecord.id);
+
+        if (updateError) {
+          console.error(`[Supabase] Failed to update email:`, updateError.message);
+          continue;
+        }
+
+        updated++;
+        console.log(`        ✅ DATABASE UPDATED`);
+      } catch (threadError) {
+        console.error(`[Gmail] Error checking thread:`, threadError.message);
       }
     }
 
-    // Mark email as unreplied
-    async function markEmailUnreplied() {
-      if (!currentEmail || !currentEmail.id) {
-        alert('Error: Email information not found.');
-        return;
-      }
-      
+    console.log(`[Gmail] Updated: ${updated} emails marked as replied`);
+    console.log(`[Gmail] ========================================`);
+  } catch (error) {
+    console.error(`[Gmail] Reply check error:`, error.message);
+  }
+}
+
+// =====================================================
+// FETCH ALL EMAILS
+// =====================================================
+
+async function fetchAllEmails(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const tokens = await getToken(normalizedEmail);
+
+  if (!tokens) {
+    console.log(`[Gmail] No token found for ${normalizedEmail}`);
+    return 0;
+  }
+
+  const client = createOAuthClient(tokens, normalizedEmail);
+  const gmail = google.gmail({ version: 'v1', auth: client });
+
+  try {
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+    const afterDate = fiveDaysAgo.toISOString().split('T')[0];
+
+    const senderQuery = Array.from(TRACKED)
+      .map(sender => `from:${sender}`)
+      .join(' OR ');
+
+    const query = `in:inbox after:${afterDate} (${senderQuery})`;
+
+    console.log(`[Gmail] Fetching emails for ${normalizedEmail} from ${afterDate}`);
+
+    const { data: messageResult } = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: 500
+    });
+
+    const messages = messageResult?.messages || [];
+
+    if (!messages.length) {
+      console.log(`[Gmail] No tracked emails found`);
+      return 0;
+    }
+
+    let saved = 0;
+    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
+
+    for (const message of messages) {
       try {
-        const res = await fetch(`/api/emails/${currentEmail.id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'unreplied' })
+        const { data: existingEmail } = await supabase
+          .from('emails')
+          .select('id')
+          .eq('email_id', message.id)
+          .maybeSingle();
+
+        if (existingEmail) continue;
+
+        const { data: fullMessage } = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'full'
         });
 
-        if (res.ok) {
-          closeModal();
-          loadStats();
-          alert('↩️ Email marked as unreplied!');
-        } else {
-          alert('Error: Failed to update email');
-        }
-      } catch (error) {
-        alert('Error: ' + error.message);
-      }
-    }
+        const headers = fullMessage.payload?.headers || [];
+        const fromHeader = getHeader(headers, 'From');
+        const subject = getHeader(headers, 'Subject') || '(No Subject)';
+        const receivedAtRaw = getHeader(headers, 'Date');
 
-    // Test user reminder
-    async function testUserReminder() {
-      const msgEl = document.getElementById('testMessage');
-      msgEl.innerHTML = '<div class="alert alert-info">⏳ Sending reminder to user...</div>';
+        const senderEmail = extractSenderEmail(fromHeader);
 
-      try {
-        const res = await fetch('/api/test/send-user-reminder');
-        const data = await res.json();
+        // Skip if not a tracked sender
+        if (!TRACKED.has(senderEmail)) continue;
 
-        if (res.ok) {
-          msgEl.innerHTML = `
-            <div class="alert alert-success">
-              ✅ User reminder sent!<br>
-              Email: <strong>kishor.merchant06@gmail.com</strong>
-            </div>
-          `;
-          setTimeout(loadEmailHistory, 1000);
-        } else {
-          msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${data.error}</div>`;
-        }
-      } catch (error) {
-        msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${error.message}</div>`;
-      }
-    }
-
-    // Test manager alert (check user reply)
-    async function testManagerAlert() {
-      const msgEl = document.getElementById('testMessage');
-      msgEl.innerHTML = '<div class="alert alert-info">⏳ Checking user reply and alerting manager...</div>';
-
-      try {
-        const res = await fetch('/api/test/check-user-reply-alert-manager');
-        const data = await res.json();
-
-        if (res.ok) {
-          msgEl.innerHTML = `
-            <div class="alert alert-success">
-              ✅ Manager alert check completed!<br>
-              If user didn't reply in 24 hours, alert sent to: <strong>marketing.kishorexports1@gmail.com</strong>
-            </div>
-          `;
-          setTimeout(loadEmailHistory, 1000);
-        } else {
-          msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${data.error}</div>`;
-        }
-      } catch (error) {
-        msgEl.innerHTML = `<div class="alert alert-info">❌ Error: ${error.message}</div>`;
-      }
-    }
-
-    // Load email history
-    async function loadEmailHistory() {
-      const historyEl = document.getElementById('historyContainer');
-      historyEl.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
-
-      try {
-        const res = await fetch('/api/email-history');
-        const data = await res.json();
-
-        if (!data.logs || data.logs.length === 0) {
-          historyEl.innerHTML = '<div style="text-align: center; padding: 40px; color: #888;">No email sending history yet.</div>';
-          return;
+        // Skip if internal Kishor Exports email
+        if (INTERNAL_DOMAINS.has(senderEmail)) {
+          console.log(`[Gmail] Skipped internal email from ${senderEmail}`);
+          continue;
         }
 
-        let html = `<p style="margin-bottom: 15px; color: #666;">Total emails sent: <strong>${data.total}</strong></p>`;
-        html += '<table><thead><tr><th>Type</th><th>Date & Time</th><th>Recipients</th><th>Count</th></tr></thead><tbody>';
+        const receivedDate = new Date(receivedAtRaw || Date.now());
+        if (Number.isNaN(receivedDate.getTime())) continue;
 
-        for (const log of data.logs) {
-          const date = new Date(log.sent_at).toLocaleString('en-US', {
-            year: 'numeric',
-            month: 'numeric',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-            timeZone: 'Asia/Kolkata'
+        const receivedAt = receivedDate.toISOString();
+        const emailAge = Date.now() - receivedDate.getTime();
+
+        if (emailAge > fiveDaysMs) continue;
+
+        const { error: insertError } = await supabase
+          .from('emails')
+          .insert({
+            email_id: message.id,
+            thread_id: fullMessage.threadId,
+            account: normalizedEmail,
+            sender_email: senderEmail,
+            sender_name: fromHeader.split('<')[0].trim(),
+            subject,
+            received_at: receivedAt,
+            status: 'unreplied',
+            body_preview: fullMessage.snippet || ''
           });
 
-          const type = log.reminder_type === 'manager_notification' 
-            ? '<span class="badge badge-manager">Manager Alert</span>'
-            : '<span class="badge badge-sender">Sender Reminder</span>';
-
-          const recipients = log.recipients || '(Multiple)';
-          const count = log.email_count || 'N/A';
-
-          html += `
-            <tr>
-              <td>${type}</td>
-              <td>${date}</td>
-              <td>${recipients}</td>
-              <td>${count}</td>
-            </tr>
-          `;
+        if (!insertError) {
+          saved++;
         }
-
-        html += '</tbody></table>';
-        historyEl.innerHTML = html;
-      } catch (error) {
-        historyEl.innerHTML = `<div class="alert alert-info">Error loading history: ${error.message}</div>`;
+      } catch (messageError) {
+        // Continue processing
       }
     }
 
-    // Auto-load on page load
-    window.addEventListener('load', function() {
-      console.log('[Dashboard] Window loaded');
-      loadStats();
-      
-      // Auto-refresh every 5 minutes
-      setInterval(loadStats, 5 * 60 * 1000);
+    console.log(`[Gmail] Saved: ${saved} emails`);
+    return saved;
+  } catch (error) {
+    console.error(`[Gmail] Fetch error:`, error.message);
+    return 0;
+  }
+}
+
+// =====================================================
+// ROUTES
+// =====================================================
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.get('/dashboard.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/auth/google', (req, res) => {
+  const account = req.query.account || getDefaultGmailAccount();
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: GMAIL_SCOPES,
+    state: account,
+    prompt: 'consent'
+  });
+  res.redirect(authUrl);
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const { code, state: account } = req.query;
+    if (!code) return res.status(400).send('No authorization code provided');
+
+    const { tokens } = await oauth2Client.getToken(code);
+    await saveToken(account, tokens);
+
+    console.log(`[OAuth] Successfully authenticated ${account}`);
+    res.redirect(`/?google_login=success&email=${encodeURIComponent(account)}`);
+  } catch (error) {
+    console.error('[OAuth] Error:', error.message);
+    res.status(500).send(`Authentication failed: ${error.message}`);
+  }
+});
+
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const { code, state: account } = req.query;
+    if (!code) return res.status(400).send('No authorization code provided');
+
+    const { tokens } = await oauth2Client.getToken(code);
+    await saveToken(account, tokens);
+
+    console.log(`[OAuth] Successfully authenticated ${account}`);
+    res.redirect(`/?google_login=success&email=${encodeURIComponent(account)}`);
+  } catch (error) {
+    console.error('[OAuth] Error:', error.message);
+    res.status(500).send(`Authentication failed: ${error.message}`);
+  }
+});
+
+// =====================================================
+// API ENDPOINTS
+// =====================================================
+
+app.get('/api/stats', async (req, res) => {
+  try {
+    const { data: emails, error } = await supabase
+      .from('emails')
+      .select('status, received_at');
+
+    if (error) throw error;
+
+    const records = emails || [];
+    const today = new Date().toISOString().split('T')[0];
+
+    const total = records.length;
+    const unreplied = records.filter(e => e.status === 'unreplied').length;
+    const replied = records.filter(e => e.status === 'replied').length;
+    const todayCount = records.filter(e => e.received_at.startsWith(today)).length;
+
+    res.json({ total, unreplied, replied, today: todayCount });
+  } catch (error) {
+    console.error('[API] Error loading stats:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/emails', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const offset = (page - 1) * limit;
+
+    const { data, count, error } = await supabase
+      .from('emails')
+      .select('*', { count: 'exact' })
+      .order('received_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    res.json({
+      data: data || [],
+      count: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit)
+    });
+  } catch (error) {
+    console.error('[API] Error fetching emails:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/emails/unreplied', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const offset = (page - 1) * limit;
+
+    const { data, count, error } = await supabase
+      .from('emails')
+      .select('*', { count: 'exact' })
+      .eq('status', 'unreplied')
+      .order('received_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    res.json({
+      data: data || [],
+      count: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit)
+    });
+  } catch (error) {
+    console.error('[API] Error fetching unreplied emails:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper function to convert HTML to plain text
+function htmlToPlainText(html) {
+  if (!html) return '';
+  
+  // Remove script and style elements
+  let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+  
+  // Remove HTML comments
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  
+  // Replace common HTML entities
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&apos;/g, "'");
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&#39;/g, "'");
+  
+  // Replace <br> and <br/> with newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/(p|div|blockquote|table)>/gi, '\n');
+  text = text.replace(/<tr>/gi, '\n');
+  text = text.replace(/<td>/gi, '  ');
+  
+  // Remove all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+  
+  // Decode HTML entities
+  const textarea = require('util').TextEncoder ? null : null;
+  const div = { innerHTML: text };
+  text = div.textContent || div.innerText || text;
+  
+  // Clean up extra whitespace
+  text = text.replace(/\n\s*\n/g, '\n');
+  text = text.trim();
+  
+  return text;
+}
+
+app.get('/api/emails/:emailId/body', async (req, res) => {
+  try {
+    const { data: email, error: emailError } = await supabase
+      .from('emails')
+      .select('*')
+      .eq('email_id', req.params.emailId)
+      .maybeSingle();
+
+    if (emailError || !email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    const tokens = await getToken(email.account);
+    if (!tokens) {
+      return res.status(401).json({ error: 'No Gmail token' });
+    }
+
+    const client = createOAuthClient(tokens, email.account);
+    const gmail = google.gmail({ version: 'v1', auth: client });
+
+    const { data: fullMessage } = await gmail.users.messages.get({
+      userId: 'me',
+      id: req.params.emailId,
+      format: 'full'
     });
 
-    // Close modal on Escape key
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeModal();
+    const payload = fullMessage.payload || {};
+    let body = '';
+
+    function findMessagePart(parts, targetMimeType) {
+      for (const part of parts || []) {
+        if (part.mimeType === targetMimeType && part.body?.data) {
+          return part;
+        }
+        if (part.parts?.length) {
+          const nestedPart = findMessagePart(part.parts, targetMimeType);
+          if (nestedPart) return nestedPart;
+        }
+      }
+      return null;
+    }
+
+    // PRIORITY: Try to get plain text first, then HTML
+    if (payload.parts?.length) {
+      const textPart = findMessagePart(payload.parts, 'text/plain');
+      const htmlPart = findMessagePart(payload.parts, 'text/html');
+
+      if (textPart) {
+        // Prefer plain text
+        body = Buffer.from(textPart.body.data, 'base64url').toString('utf8');
+      } else if (htmlPart) {
+        // If no plain text, convert HTML to text
+        const rawHtml = Buffer.from(htmlPart.body.data, 'base64url').toString('utf8');
+        body = htmlToPlainText(rawHtml);
+      }
+    } else if (payload.body?.data) {
+      body = Buffer.from(payload.body.data, 'base64url').toString('utf8');
+    }
+
+    res.json({ body: body || 'No content available' });
+  } catch (error) {
+    console.error('[API] Error loading email body:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/emails/:emailId/status', async (req, res) => {
+  try {
+    const emailId = req.params.emailId;
+    const { status } = req.body;
+
+    console.log(`[API] Updating email ${emailId} to status: ${status}`);
+
+    if (!emailId) {
+      return res.status(400).json({ error: 'Email ID is required' });
+    }
+
+    if (!['unreplied', 'replied', 'no_reply_needed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    // Update by primary key 'id'
+    const { error } = await supabase
+      .from('emails')
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+        replied_at: status === 'replied' ? new Date().toISOString() : null
+      })
+      .eq('id', emailId);
+
+    if (error) {
+      console.error('[API] Supabase error:', error.message);
+      throw error;
+    }
+
+    console.log(`[API] ✅ Email ${emailId} updated to status: ${status}`);
+    res.json({ success: true, status });
+  } catch (error) {
+    console.error('[API] Error updating status:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =====================================================
+// CRON JOBS
+// =====================================================
+
+// Fetch emails every 5 minutes
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    console.log('[Cron] Starting 5-minute email fetch');
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('account_email')
+      .not('gmail_token', 'is', null);
+
+    if (!error && users) {
+      for (const user of users) {
+        await fetchAllEmails(user.account_email);
+      }
+    }
+  } catch (error) {
+    console.error('[Cron] Fetch failed:', error.message);
+  }
+});
+
+// Check replies every 5 minutes
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    console.log('[Cron] Starting 5-minute reply check');
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('account_email')
+      .not('gmail_token', 'is', null);
+
+    if (!error && users) {
+      for (const user of users) {
+        await checkForReplies(user.account_email);
+      }
+    }
+  } catch (error) {
+    console.error('[Cron] Reply check failed:', error.message);
+  }
+});
+
+// Send reminder to user (kishor.merchant06@gmail.com) every hour
+cron.schedule('0 * * * *', async () => {
+  try {
+    console.log('[Cron] Sending hourly reminder to user (kishor.merchant06@gmail.com)');
+    await sendReminderToUser();
+  } catch (error) {
+    console.error('[Cron] User reminder failed:', error.message);
+  }
+});
+
+// Check if user replied, if not alert manager (every 24 hours at 3:30 AM)
+cron.schedule('30 3 * * *', async () => {
+  try {
+    console.log('[Cron] Checking if user replied, if not alerting manager');
+    await checkUserReplyAndAlertManager();
+  } catch (error) {
+    console.error('[Cron] Manager alert check failed:', error.message);
+  }
+});
+
+// =====================================================
+// TEST ENDPOINTS - FOR TESTING EMAIL FUNCTIONALITY
+// =====================================================
+
+// Test: Send reminder to user
+app.get('/api/test/send-user-reminder', async (req, res) => {
+  try {
+    console.log('[TEST] Testing reminder email to user (kishor.merchant06@gmail.com)...');
+    await sendReminderToUser();
+    res.json({ success: true, message: '✅ Reminder email test sent to kishor.merchant06@gmail.com' });
+  } catch (error) {
+    console.error('[TEST] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test: Check if user replied and alert manager
+app.get('/api/test/check-user-reply-alert-manager', async (req, res) => {
+  try {
+    console.log('[TEST] Testing check user reply and alert manager...');
+    await checkUserReplyAndAlertManager();
+    res.json({ success: true, message: '✅ Manager alert check test completed' });
+  } catch (error) {
+    console.error('[TEST] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get email sending history
+app.get('/api/email-history', async (req, res) => {
+  try {
+    const { data: logs, error } = await supabase
+      .from('reminder_logs')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+
+    res.json({ 
+      success: true, 
+      total: logs ? logs.length : 0,
+      logs: logs || [] 
     });
-  </script>
-</body>
-</html>
+  } catch (error) {
+    console.error('[API] Error fetching email history:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[Server] Running on port ${PORT}`);
+  console.log(`[Tracker] Tracking ${TRACKED.size} approved senders`);
+  console.log(`[Cron] Email fetch: Every 5 minutes`);
+  console.log(`[Cron] Reply check: Every 5 minutes`);
+  console.log(`[Cron] Manager notifications: Every hour`);
+  console.log(`[Cron] Sender reminders: Every 6 hours`);
+  console.log(`[Email] Manager email: marketing.kishorexports1@gmail.com`);
+});
