@@ -24,6 +24,8 @@ app.use(express.static(__dirname));
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_API_URL = 'api.brevo.com';
+const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Kishor Exports';
+const BREVO_SENDER_EMAIL = (process.env.BREVO_SENDER_EMAIL || '').trim().toLowerCase();
 
 // Send email using Brevo API (using HTTPS)
 async function sendEmailViaBrevo(to, subject, htmlContent) {
@@ -35,13 +37,19 @@ async function sendEmailViaBrevo(to, subject, htmlContent) {
         return;
       }
 
+      if (!BREVO_SENDER_EMAIL) {
+        console.error('[Email] BREVO_SENDER_EMAIL is not set. Add a verified Brevo sender email in Render.');
+        resolve(false);
+        return;
+      }
+
       const emailData = JSON.stringify({
         to: [{ email: to }],
         subject: subject,
         htmlContent: htmlContent,
         sender: { 
-          name: 'Kishor Exports', 
-          email: 'no-reply@brevo.com' 
+          name: BREVO_SENDER_NAME, 
+          email: BREVO_SENDER_EMAIL 
         }
       });
 
@@ -65,24 +73,26 @@ async function sendEmailViaBrevo(to, subject, htmlContent) {
 
         res.on('end', () => {
           if (res.statusCode === 201) {
-            console.log(`[Email] ✅ Email sent to ${to} via Brevo`);
+            console.log(`[Email] Email sent to ${to} via Brevo from ${BREVO_SENDER_EMAIL}`);
             resolve(true);
           } else {
-            console.error(`[Email] ❌ Brevo error (${res.statusCode}):`, data);
+            console.error('[Email] Brevo send failed');
+            console.error('[Email] Status:', res.statusCode);
+            console.error('[Email] Response:', data);
             resolve(false);
           }
         });
       });
 
       req.on('error', (error) => {
-        console.error(`[Email] ❌ Request error:`, error.message);
+        console.error('[Email] Request error:', error.message);
         resolve(false);
       });
 
       req.write(emailData);
       req.end();
     } catch (error) {
-      console.error(`[Email] ❌ Error:`, error.message);
+      console.error('[Email] Error:', error.message);
       resolve(false);
     }
   });
@@ -267,9 +277,14 @@ async function sendReminderToUser() {
       .eq('status', 'unreplied')
       .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
-    if (error || !unrepliedEmails || unrepliedEmails.length === 0) {
+    if (error) {
+      console.error('[UserReminder] Failed to load unreplied emails:', error.message);
+      return false;
+    }
+
+    if (!unrepliedEmails || unrepliedEmails.length === 0) {
       console.log('[UserReminder] No unreplied emails in last 24 hours');
-      return;
+      return true;
     }
 
     console.log(`[UserReminder] Found ${unrepliedEmails.length} unreplied emails`);
@@ -315,11 +330,15 @@ async function sendReminderToUser() {
       } catch (logError) {
         console.error('[UserReminder] Could not log email send:', logError.message);
       }
+
+      return true;
     } else {
       console.error('[UserReminder] Failed to send reminder to user');
+      return false;
     }
   } catch (error) {
     console.error('[UserReminder] Error:', error.message);
+    return false;
   }
 }
 
@@ -339,9 +358,14 @@ async function checkUserReplyAndAlertManager() {
       .eq('status', 'unreplied')
       .lt('received_at', oneDayAgo);
 
-    if (error || !stillUnrepliedEmails || stillUnrepliedEmails.length === 0) {
+    if (error) {
+      console.error('[ManagerAlert] Failed to load unreplied emails:', error.message);
+      return false;
+    }
+
+    if (!stillUnrepliedEmails || stillUnrepliedEmails.length === 0) {
       console.log('[ManagerAlert] All emails have been replied! No alert needed.');
-      return;
+      return true;
     }
 
     console.log(`[ManagerAlert] Found ${stillUnrepliedEmails.length} emails still unreplied after 24 hours`);
@@ -387,11 +411,15 @@ async function checkUserReplyAndAlertManager() {
       } catch (logError) {
         console.error('[ManagerAlert] Could not log email send:', logError.message);
       }
+
+      return true;
     } else {
       console.error('[ManagerAlert] Failed to send alert to manager');
+      return false;
     }
   } catch (error) {
     console.error('[ManagerAlert] Error:', error.message);
+    return false;
   }
 }
 
@@ -880,13 +908,30 @@ function htmlToPlainText(html) {
 
 app.get('/api/emails/:emailId/body', async (req, res) => {
   try {
-    const { data: email, error: emailError } = await supabase
+    const requestedEmailId = req.params.emailId;
+
+    let { data: email, error: emailError } = await supabase
       .from('emails')
       .select('*')
-      .eq('email_id', req.params.emailId)
+      .eq('id', requestedEmailId)
       .maybeSingle();
 
-    if (emailError || !email) {
+    if (!email && !emailError) {
+      const result = await supabase
+        .from('emails')
+        .select('*')
+        .eq('email_id', requestedEmailId)
+        .maybeSingle();
+
+      email = result.data;
+      emailError = result.error;
+    }
+
+    if (emailError) {
+      throw emailError;
+    }
+
+    if (!email) {
       return res.status(404).json({ error: 'Email not found' });
     }
 
@@ -900,7 +945,7 @@ app.get('/api/emails/:emailId/body', async (req, res) => {
 
     const { data: fullMessage } = await gmail.users.messages.get({
       userId: 'me',
-      id: req.params.emailId,
+      id: email.email_id,
       format: 'full'
     });
 
@@ -1028,7 +1073,14 @@ cron.schedule('*/5 * * * *', async () => {
 cron.schedule('0 * * * *', async () => {
   try {
     console.log('[Cron] Sending hourly reminder to user (kishor.merchant06@gmail.com)');
-    await sendReminderToUser();
+    const sent = await sendReminderToUser();
+
+    if (!sent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Reminder email failed. Check Render logs for the Brevo status and response.'
+      });
+    }
   } catch (error) {
     console.error('[Cron] User reminder failed:', error.message);
   }
@@ -1038,7 +1090,14 @@ cron.schedule('0 * * * *', async () => {
 cron.schedule('30 3 * * *', async () => {
   try {
     console.log('[Cron] Checking if user replied, if not alerting manager');
-    await checkUserReplyAndAlertManager();
+    const sent = await checkUserReplyAndAlertManager();
+
+    if (!sent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Manager alert email failed. Check Render logs for the Brevo status and response.'
+      });
+    }
   } catch (error) {
     console.error('[Cron] Manager alert check failed:', error.message);
   }
@@ -1097,7 +1156,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`[Tracker] Tracking ${TRACKED.size} approved senders`);
   console.log(`[Cron] Email fetch: Every 5 minutes`);
   console.log(`[Cron] Reply check: Every 5 minutes`);
-  console.log(`[Cron] Manager notifications: Every hour`);
-  console.log(`[Cron] Sender reminders: Every 6 hours`);
+  console.log(`[Cron] User reminders: Every hour`);
+  console.log(`[Cron] Manager alerts: Daily at 3:30 AM`);
+  console.log(`[Email] Brevo sender: ${BREVO_SENDER_EMAIL || 'NOT SET'}`);
   console.log(`[Email] Manager email: marketing.kishorexports1@gmail.com`);
 });
