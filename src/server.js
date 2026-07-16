@@ -66,7 +66,7 @@ function getDefaultGmailAccount() {
 }
 
 // =====================================================
-// TRACKED SENDERS
+// TRACKED SENDERS - EXTERNAL ONLY
 // =====================================================
 
 const TRACKED = new Set([
@@ -85,6 +85,18 @@ const TRACKED = new Set([
   'bettina@gai-lisva.com',
   'camillad@luxkids.dk',
   'emma@emmamalena.com'
+].map(email => email.toLowerCase()));
+
+// =====================================================
+// INTERNAL EMAILS TO EXCLUDE (DO NOT TRACK)
+// =====================================================
+
+const INTERNAL_DOMAINS = new Set([
+  'kishor.merchant06@gmail.com',
+  'kishor.merchant24@gmail.com',
+  'admin@kishorexports.com',
+  'kishorexports@gmail.com',
+  'noreply@kishorexports.com'
 ].map(email => email.toLowerCase()));
 
 // =====================================================
@@ -518,7 +530,14 @@ async function fetchAllEmails(email) {
 
         const senderEmail = extractSenderEmail(fromHeader);
 
+        // Skip if not a tracked sender
         if (!TRACKED.has(senderEmail)) continue;
+
+        // Skip if internal Kishor Exports email
+        if (INTERNAL_DOMAINS.has(senderEmail)) {
+          console.log(`[Gmail] Skipped internal email from ${senderEmail}`);
+          continue;
+        }
 
         const receivedDate = new Date(receivedAtRaw || Date.now());
         if (Number.isNaN(receivedDate.getTime())) continue;
@@ -808,12 +827,20 @@ app.get('/api/emails/:emailId/body', async (req, res) => {
 
 app.patch('/api/emails/:emailId/status', async (req, res) => {
   try {
+    const emailId = req.params.emailId;
     const { status } = req.body;
+
+    console.log(`[API] Updating email ${emailId} to status: ${status}`);
+
+    if (!emailId) {
+      return res.status(400).json({ error: 'Email ID is required' });
+    }
 
     if (!['unreplied', 'replied', 'no_reply_needed'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
 
+    // Update by primary key 'id'
     const { error } = await supabase
       .from('emails')
       .update({
@@ -821,10 +848,14 @@ app.patch('/api/emails/:emailId/status', async (req, res) => {
         updated_at: new Date().toISOString(),
         replied_at: status === 'replied' ? new Date().toISOString() : null
       })
-      .eq('email_id', req.params.emailId);
+      .eq('id', emailId);
 
-    if (error) throw error;
+    if (error) {
+      console.error('[API] Supabase error:', error.message);
+      throw error;
+    }
 
+    console.log(`[API] ✅ Email ${emailId} updated to status: ${status}`);
     res.json({ success: true, status });
   } catch (error) {
     console.error('[API] Error updating status:', error.message);
