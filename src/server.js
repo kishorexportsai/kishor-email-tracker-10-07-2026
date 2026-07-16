@@ -699,6 +699,47 @@ app.get('/api/emails/unreplied', async (req, res) => {
   }
 });
 
+// Helper function to convert HTML to plain text
+function htmlToPlainText(html) {
+  if (!html) return '';
+  
+  // Remove script and style elements
+  let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+  
+  // Remove HTML comments
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  
+  // Replace common HTML entities
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&apos;/g, "'");
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&#39;/g, "'");
+  
+  // Replace <br> and <br/> with newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/(p|div|blockquote|table)>/gi, '\n');
+  text = text.replace(/<tr>/gi, '\n');
+  text = text.replace(/<td>/gi, '  ');
+  
+  // Remove all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, '');
+  
+  // Decode HTML entities
+  const textarea = require('util').TextEncoder ? null : null;
+  const div = { innerHTML: text };
+  text = div.textContent || div.innerText || text;
+  
+  // Clean up extra whitespace
+  text = text.replace(/\n\s*\n/g, '\n');
+  text = text.trim();
+  
+  return text;
+}
+
 app.get('/api/emails/:emailId/body', async (req, res) => {
   try {
     const { data: email, error: emailError } = await supabase
@@ -741,14 +782,18 @@ app.get('/api/emails/:emailId/body', async (req, res) => {
       return null;
     }
 
+    // PRIORITY: Try to get plain text first, then HTML
     if (payload.parts?.length) {
-      const htmlPart = findMessagePart(payload.parts, 'text/html');
       const textPart = findMessagePart(payload.parts, 'text/plain');
+      const htmlPart = findMessagePart(payload.parts, 'text/html');
 
-      if (htmlPart) {
-        body = Buffer.from(htmlPart.body.data, 'base64url').toString('utf8');
-      } else if (textPart) {
+      if (textPart) {
+        // Prefer plain text
         body = Buffer.from(textPart.body.data, 'base64url').toString('utf8');
+      } else if (htmlPart) {
+        // If no plain text, convert HTML to text
+        const rawHtml = Buffer.from(htmlPart.body.data, 'base64url').toString('utf8');
+        body = htmlToPlainText(rawHtml);
       }
     } else if (payload.body?.data) {
       body = Buffer.from(payload.body.data, 'base64url').toString('utf8');
