@@ -175,9 +175,7 @@ function createOAuthClient(tokens, email) {
 }
 
 // =====================================================
-// FETCH EMAILS
-// ONLY FROM 15 TRACKED SENDERS
-// ONLY FROM LAST 5 DAYS
+// FETCH EMAILS - ONLY FROM 15 TRACKED SENDERS
 // =====================================================
 
 async function fetchAllEmails(email) {
@@ -541,6 +539,34 @@ app.get('/auth/google', (req, res) => {
   res.redirect(authUrl);
 });
 
+// =====================================================
+// OAUTH CALLBACK - BOTH ROUTES TO HANDLE ALL CASES
+// =====================================================
+
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const { code, state: account } = req.query;
+
+    if (!code) {
+      return res.status(400).send('No authorization code provided');
+    }
+
+    const { tokens } = await oauth2Client.getToken(code);
+
+    if (!tokens.refresh_token) {
+      console.warn('[OAuth] No refresh token in response');
+    }
+
+    await saveToken(account, tokens);
+
+    console.log(`[OAuth] Successfully authenticated ${account}`);
+    res.redirect(`/?success=true&account=${encodeURIComponent(account)}`);
+  } catch (error) {
+    console.error('[OAuth] Error:', error.message);
+    res.status(500).send(`Authentication failed: ${error.message}`);
+  }
+});
+
 app.get('/auth/callback', async (req, res) => {
   try {
     const { code, state: account } = req.query;
@@ -762,7 +788,7 @@ app.get('/api/agents', async (req, res) => {
 });
 
 // =====================================================
-// DEBUG ENDPOINT - DIAGNOSE ISSUES
+// DEBUG ENDPOINT
 // =====================================================
 
 app.get('/api/debug', async (req, res) => {
@@ -774,7 +800,6 @@ app.get('/api/debug', async (req, res) => {
       issues: []
     };
 
-    // Check Supabase connection
     const { data: testQuery, error: testError } = await supabase
       .from('users')
       .select('account_email, gmail_token')
@@ -787,7 +812,6 @@ app.get('/api/debug', async (req, res) => {
 
     debug.supabase = 'connected';
 
-    // Check users with Gmail tokens
     const { data: usersWithTokens, error: usersError } = await supabase
       .from('users')
       .select('account_email, gmail_token')
@@ -800,7 +824,6 @@ app.get('/api/debug', async (req, res) => {
 
     debug.users_with_tokens = usersWithTokens?.length || 0;
 
-    // For each user, check Gmail token validity
     if (usersWithTokens && usersWithTokens.length > 0) {
       for (const user of usersWithTokens) {
         const tokens = await getToken(user.account_email);
@@ -809,44 +832,12 @@ app.get('/api/debug', async (req, res) => {
           debug.issues.push(`❌ ${user.account_email}: Gmail token invalid or expired`);
         } else {
           debug.gmail_connected = user.account_email;
-
-          // Try to fetch emails
-          const client = createOAuthClient(tokens, user.account_email);
-          const gmail = google.gmail({ version: 'v1', auth: client });
-
-          try {
-            const fiveDaysAgo = new Date();
-            fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-            const afterDate = fiveDaysAgo.toISOString().split('T')[0];
-
-            const senderQuery = Array.from(TRACKED)
-              .map(sender => `from:${sender}`)
-              .join(' OR ');
-
-            const query = `in:inbox after:${afterDate} (${senderQuery})`;
-
-            const { data: messageResult } = await gmail.users.messages.list({
-              userId: 'me',
-              q: query,
-              maxResults: 100
-            });
-
-            const messageCount = messageResult?.messages?.length || 0;
-            debug.emails_found_in_gmail = messageCount;
-
-            if (messageCount === 0) {
-              debug.issues.push(`⚠️  No emails from tracked senders in last 5 days`);
-            }
-          } catch (gmailError) {
-            debug.issues.push(`❌ Gmail API error: ${gmailError.message}`);
-          }
         }
       }
     } else {
       debug.issues.push('❌ No users with Gmail tokens in database');
     }
 
-    // Check emails in database
     const { data: emailCount, error: emailError } = await supabase
       .from('emails')
       .select('id', { count: 'exact' });
@@ -855,7 +846,6 @@ app.get('/api/debug', async (req, res) => {
       debug.emails_in_database = emailCount?.length || 0;
     }
 
-    // Check unreplied emails
     const { data: unrepliedCount, error: unrepliedError } = await supabase
       .from('emails')
       .select('id', { count: 'exact' })
@@ -865,7 +855,6 @@ app.get('/api/debug', async (req, res) => {
       debug.unreplied_emails = unrepliedCount?.length || 0;
     }
 
-    // Check replied emails
     const { data: repliedCount, error: repliedError } = await supabase
       .from('emails')
       .select('id', { count: 'exact' })
@@ -925,9 +914,7 @@ app.get('/api/sync', async (req, res) => {
 // Fetch emails every 5 minutes
 cron.schedule('*/5 * * * *', async () => {
   try {
-    console.log(
-      '[Cron] Starting 5-minute Gmail fetch for tracked senders'
-    );
+    console.log('[Cron] Starting 5-minute Gmail fetch for tracked senders');
 
     const { data: users, error } = await supabase
       .from('users')
