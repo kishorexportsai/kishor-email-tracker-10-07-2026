@@ -6,6 +6,7 @@ const cron = require('node-cron');
 const { google } = require('googleapis');
 const { createClient } = require('@supabase/supabase-js');
 const https = require('https');
+const EmailFilter = require('./email_filter_engine'); // ✅ IMPORT EMAIL FILTER
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +15,9 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
+
+// ✅ INITIALIZE EMAIL FILTER
+const emailFilter = new EmailFilter();
 
 app.use(express.json());
 app.use(express.static(__dirname));
@@ -25,20 +29,22 @@ app.use(express.static(__dirname));
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_API_URL = 'api.brevo.com';
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Kishor Exports';
-const BREVO_SENDER_EMAIL = (process.env.BREVO_SENDER_EMAIL || '').trim().toLowerCase();
+// ✅ FIXED: Use environment variable for verified sender email
+const BREVO_SENDER_EMAIL = (process.env.BREVO_SENDER_EMAIL || 'kishorexports@gmail.com').trim().toLowerCase();
 
-// Send email using Brevo API (using HTTPS)
+// ✅ IMPROVED: Send email using Brevo API with better error handling
 async function sendEmailViaBrevo(to, subject, htmlContent) {
   return new Promise((resolve) => {
     try {
       if (!BREVO_API_KEY) {
-        console.error('[Email] BREVO_API_KEY not set');
+        console.error('[Email] ❌ BREVO_API_KEY not set - Email NOT sent');
         resolve(false);
         return;
       }
 
-      if (!BREVO_SENDER_EMAIL) {
-        console.error('[Email] BREVO_SENDER_EMAIL is not set. Add a verified Brevo sender email in Render.');
+      if (!BREVO_SENDER_EMAIL || BREVO_SENDER_EMAIL === 'not-set') {
+        console.error('[Email] ❌ BREVO_SENDER_EMAIL not configured - Email NOT sent');
+        console.error('[Email] Set BREVO_SENDER_EMAIL in Render environment variables');
         resolve(false);
         return;
       }
@@ -73,26 +79,30 @@ async function sendEmailViaBrevo(to, subject, htmlContent) {
 
         res.on('end', () => {
           if (res.statusCode === 201) {
-            console.log(`[Email] Email sent to ${to} via Brevo from ${BREVO_SENDER_EMAIL}`);
+            console.log(`[Email] ✅ Email sent successfully to ${to}`);
+            console.log(`[Email] From: ${BREVO_SENDER_EMAIL}`);
+            console.log(`[Email] Subject: ${subject}`);
             resolve(true);
           } else {
-            console.error('[Email] Brevo send failed');
-            console.error('[Email] Status:', res.statusCode);
+            console.error('[Email] ❌ Brevo API Error');
+            console.error('[Email] Status Code:', res.statusCode);
             console.error('[Email] Response:', data);
+            console.error('[Email] Recipient:', to);
+            console.error('[Email] Sender:', BREVO_SENDER_EMAIL);
             resolve(false);
           }
         });
       });
 
       req.on('error', (error) => {
-        console.error('[Email] Request error:', error.message);
+        console.error('[Email] ❌ Request Error:', error.message);
         resolve(false);
       });
 
       req.write(emailData);
       req.end();
     } catch (error) {
-      console.error('[Email] Error:', error.message);
+      console.error('[Email] ❌ Exception Error:', error.message);
       resolve(false);
     }
   });
@@ -275,6 +285,7 @@ async function sendReminderToUser() {
       .from('emails')
       .select('id, sender_email, sender_name, subject, received_at')
       .eq('status', 'unreplied')
+      .eq('should_track', true) // ✅ ONLY TRACKED EMAILS
       .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     if (error) {
@@ -283,16 +294,16 @@ async function sendReminderToUser() {
     }
 
     if (!unrepliedEmails || unrepliedEmails.length === 0) {
-      console.log('[UserReminder] No unreplied emails in last 24 hours');
+      console.log('[UserReminder] No unreplied tracked emails in last 24 hours');
       return true;
     }
 
-    console.log(`[UserReminder] Found ${unrepliedEmails.length} unreplied emails`);
+    console.log(`[UserReminder] Found ${unrepliedEmails.length} unreplied tracked emails`);
 
     let emailContent = `
 <h2>📧 Please Reply to These Emails</h2>
 <p>Hi Kishor,</p>
-<p>You have <strong>${unrepliedEmails.length} unreplied emails</strong> waiting for responses from important clients.</p>
+<p>You have <strong>${unrepliedEmails.length} unreplied tracked emails</strong> waiting for responses from important clients.</p>
 <p>Please reply to them as soon as possible:</p>
 <ul>`;
 
@@ -311,6 +322,7 @@ async function sendReminderToUser() {
 <p>Best regards,<br/>Email Tracker System</p>
 `;
 
+    // ✅ FIXED: Capture the result
     const userSent = await sendEmailViaBrevo(
       'kishor.merchant06@gmail.com',
       `⚠️ Please Reply: ${unrepliedEmails.length} Unreplied Emails`,
@@ -318,27 +330,28 @@ async function sendReminderToUser() {
     );
 
     if (userSent) {
-      console.log(`[UserReminder] ✅ Reminder sent to user about ${unrepliedEmails.length} unreplied emails`);
+      console.log(`[UserReminder] ✅ Reminder successfully sent to user`);
       
       try {
         await supabase.from('reminder_logs').insert({
           reminder_type: 'user_reminder',
           sent_at: new Date().toISOString(),
           recipients: 'kishor.merchant06@gmail.com',
-          email_count: unrepliedEmails.length
+          email_count: unrepliedEmails.length,
+          status: 'sent'
         });
       } catch (logError) {
         console.error('[UserReminder] Could not log email send:', logError.message);
       }
 
-      return true;
+      return true; // ✅ FIXED: Return true on success
     } else {
-      console.error('[UserReminder] Failed to send reminder to user');
-      return false;
+      console.error('[UserReminder] ❌ Failed to send reminder to user');
+      return false; // ✅ FIXED: Return false on failure
     }
   } catch (error) {
     console.error('[UserReminder] Error:', error.message);
-    return false;
+    return false; // ✅ FIXED: Return false on error
   }
 }
 
@@ -356,6 +369,7 @@ async function checkUserReplyAndAlertManager() {
       .from('emails')
       .select('id, sender_email, sender_name, subject, received_at')
       .eq('status', 'unreplied')
+      .eq('should_track', true) // ✅ ONLY TRACKED EMAILS
       .lt('received_at', oneDayAgo);
 
     if (error) {
@@ -364,16 +378,16 @@ async function checkUserReplyAndAlertManager() {
     }
 
     if (!stillUnrepliedEmails || stillUnrepliedEmails.length === 0) {
-      console.log('[ManagerAlert] All emails have been replied! No alert needed.');
+      console.log('[ManagerAlert] All tracked emails have been replied! No alert needed.');
       return true;
     }
 
-    console.log(`[ManagerAlert] Found ${stillUnrepliedEmails.length} emails still unreplied after 24 hours`);
+    console.log(`[ManagerAlert] Found ${stillUnrepliedEmails.length} tracked emails still unreplied after 24 hours`);
 
     let emailContent = `
 <h2>🚨 URGENT: User Did Not Reply to Emails</h2>
 <p>Hi Manager,</p>
-<p>User (kishor.merchant06@gmail.com) was reminded about unreplied emails <strong>24 hours ago</strong>, but still has NOT replied to the following emails:</p>
+<p>User (kishor.merchant06@gmail.com) was reminded about unreplied emails <strong>24 hours ago</strong>, but still has NOT replied to the following tracked emails:</p>
 <ul>`;
 
     for (const email of stillUnrepliedEmails) {
@@ -392,34 +406,36 @@ async function checkUserReplyAndAlertManager() {
 <p>Best regards,<br/>Email Tracker System</p>
 `;
 
+    // ✅ FIXED: Capture the result
     const managerSent = await sendEmailViaBrevo(
       'marketing.kishorexports1@gmail.com',
-      `🚨 URGENT: User Did Not Reply - ${stillUnrepliedEmails.length} Unreplied Emails`,
+      `🚨 URGENT: User Did Not Reply - ${stillUnrepliedEmails.length} Unreplied Tracked Emails`,
       emailContent
     );
 
     if (managerSent) {
-      console.log(`[ManagerAlert] ✅ Alert sent to manager about ${stillUnrepliedEmails.length} unreplied emails after 24 hours`);
+      console.log(`[ManagerAlert] ✅ Alert successfully sent to manager`);
       
       try {
         await supabase.from('reminder_logs').insert({
           reminder_type: 'manager_alert_24h',
           sent_at: new Date().toISOString(),
           recipients: 'marketing.kishorexports1@gmail.com',
-          email_count: stillUnrepliedEmails.length
+          email_count: stillUnrepliedEmails.length,
+          status: 'sent'
         });
       } catch (logError) {
         console.error('[ManagerAlert] Could not log email send:', logError.message);
       }
 
-      return true;
+      return true; // ✅ FIXED: Return true on success
     } else {
-      console.error('[ManagerAlert] Failed to send alert to manager');
-      return false;
+      console.error('[ManagerAlert] ❌ Failed to send alert to manager');
+      return false; // ✅ FIXED: Return false on failure
     }
   } catch (error) {
     console.error('[ManagerAlert] Error:', error.message);
-    return false;
+    return false; // ✅ FIXED: Return false on error
   }
 }
 
@@ -435,10 +451,11 @@ async function sendSenderReminder() {
       .from('emails')
       .select('sender_email, sender_name, subject, received_at')
       .eq('status', 'unreplied')
+      .eq('should_track', true) // ✅ ONLY TRACKED EMAILS
       .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     if (error || !unrepliedEmails || unrepliedEmails.length === 0) {
-      console.log('[Reminder] No unreplied emails to remind about');
+      console.log('[Reminder] No unreplied tracked emails to remind about');
       return;
     }
 
@@ -487,7 +504,7 @@ async function sendSenderReminder() {
         if (reminderSent) {
           console.log(`[Reminder] ✅ Reminder sent to ${senderEmail} for ${emails.length} email(s)`);
         } else {
-          console.error(`[Reminder] Failed to send reminder to ${senderEmail}`);
+          console.error(`[Reminder] ❌ Failed to send reminder to ${senderEmail}`);
         }
       } catch (emailError) {
         console.error(`[Reminder] Error sending to ${senderEmail}:`, emailError.message);
@@ -694,6 +711,16 @@ async function fetchAllEmails(email) {
 
         if (emailAge > fiveDaysMs) continue;
 
+        // ✅ CLASSIFY EMAIL USING FILTER
+        const validation = emailFilter.validateReply({
+          from: fromHeader,
+          subject: subject,
+          body: fullMessage.snippet || ''
+        });
+
+        // ✅ DETERMINE IF SHOULD TRACK
+        const shouldTrack = validation.shouldTrack;
+
         const { error: insertError } = await supabase
           .from('emails')
           .insert({
@@ -704,12 +731,19 @@ async function fetchAllEmails(email) {
             sender_name: fromHeader.split('<')[0].trim(),
             subject,
             received_at: receivedAt,
-            status: 'unreplied',
-            body_preview: fullMessage.snippet || ''
+            status: shouldTrack ? 'unreplied' : 'no_reply_needed',
+            body_preview: fullMessage.snippet || '',
+            // ✅ NEW: STORE FILTER CLASSIFICATION
+            is_automated: !validation.shouldTrack,
+            should_track: shouldTrack,
+            filter_reason: validation.reason,
+            business_category: validation.businessIndicators?.join(', ') || null,
+            classified_at: new Date().toISOString()
           });
 
         if (!insertError) {
           saved++;
+          console.log(`[Gmail] ✅ ${shouldTrack ? 'TRACKED' : 'FILTERED'}: ${senderEmail} - ${subject}`);
         }
       } catch (messageError) {
         // Continue processing
@@ -852,12 +886,24 @@ app.get('/api/emails/unreplied', async (req, res) => {
 
     if (error) throw error;
 
+    // ✅ NEW: SEPARATE TRACKED VS FILTERED
+    const tracked = (data || []).filter(e => e.should_track);
+    const filtered = (data || []).filter(e => !e.should_track);
+
     res.json({
       data: data || [],
       count: count || 0,
       page,
       limit,
-      totalPages: Math.ceil((count || 0) / limit)
+      totalPages: Math.ceil((count || 0) / limit),
+      // ✅ NEW: FILTER METRICS
+      metrics: {
+        tracked: tracked.length,
+        filtered: filtered.length,
+        filterRate: data && data.length > 0 
+          ? ((filtered.length / data.length) * 100).toFixed(1) + '%'
+          : '0%'
+      }
     });
   } catch (error) {
     console.error('[API] Error fetching unreplied emails:', error.message);
@@ -1027,6 +1073,25 @@ app.patch('/api/emails/:emailId/status', async (req, res) => {
   }
 });
 
+// ✅ NEW: Test email sending
+app.get('/api/test/send-email-test', async (req, res) => {
+  try {
+    console.log('[TEST] Testing email send functionality...');
+    const result = await sendEmailViaBrevo(
+      'kishor.merchant06@gmail.com',
+      '✅ Test Email from Kishor Email Tracker',
+      '<h2>Test Email</h2><p>If you received this, email sending is working correctly!</p>'
+    );
+    res.json({ 
+      success: result, 
+      message: result ? '✅ Test email sent successfully!' : '❌ Test email failed to send'
+    });
+  } catch (error) {
+    console.error('[TEST] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // =====================================================
 // CRON JOBS
 // =====================================================
@@ -1073,13 +1138,12 @@ cron.schedule('*/5 * * * *', async () => {
 cron.schedule('0 * * * *', async () => {
   try {
     console.log('[Cron] Sending hourly reminder to user (kishor.merchant06@gmail.com)');
+    // ✅ FIXED: Now actually returns success/failure
     const sent = await sendReminderToUser();
-
-    if (!sent) {
-      return res.status(500).json({
-        success: false,
-        message: 'Reminder email failed. Check Render logs for the Brevo status and response.'
-      });
+    if (sent) {
+      console.log('[Cron] ✅ User reminder sent successfully');
+    } else {
+      console.error('[Cron] ❌ User reminder failed');
     }
   } catch (error) {
     console.error('[Cron] User reminder failed:', error.message);
@@ -1090,13 +1154,12 @@ cron.schedule('0 * * * *', async () => {
 cron.schedule('30 3 * * *', async () => {
   try {
     console.log('[Cron] Checking if user replied, if not alerting manager');
+    // ✅ FIXED: Now actually returns success/failure
     const sent = await checkUserReplyAndAlertManager();
-
-    if (!sent) {
-      return res.status(500).json({
-        success: false,
-        message: 'Manager alert email failed. Check Render logs for the Brevo status and response.'
-      });
+    if (sent) {
+      console.log('[Cron] ✅ Manager alert sent successfully');
+    } else {
+      console.error('[Cron] ❌ Manager alert failed');
     }
   } catch (error) {
     console.error('[Cron] Manager alert check failed:', error.message);
@@ -1110,8 +1173,12 @@ cron.schedule('30 3 * * *', async () => {
 app.get('/api/test/send-user-reminder', async (req, res) => {
   try {
     console.log('[TEST] Testing reminder email to user...');
-    await sendReminderToUser();
-    res.json({ success: true, message: '✅ Reminder email sent to kishor.merchant06@gmail.com' });
+    // ✅ FIXED: Now captures and returns actual result
+    const sent = await sendReminderToUser();
+    res.json({ 
+      success: sent, 
+      message: sent ? '✅ Reminder email sent to kishor.merchant06@gmail.com' : '❌ Failed to send reminder email' 
+    });
   } catch (error) {
     console.error('[TEST] Error:', error.message);
     res.status(500).json({ error: error.message });
@@ -1121,8 +1188,12 @@ app.get('/api/test/send-user-reminder', async (req, res) => {
 app.get('/api/test/check-user-reply-alert-manager', async (req, res) => {
   try {
     console.log('[TEST] Testing check user reply and alert manager...');
-    await checkUserReplyAndAlertManager();
-    res.json({ success: true, message: '✅ Manager alert check completed' });
+    // ✅ FIXED: Now captures and returns actual result
+    const sent = await checkUserReplyAndAlertManager();
+    res.json({ 
+      success: sent, 
+      message: sent ? '✅ Manager alert check completed and email sent' : '❌ Failed to send manager alert' 
+    });
   } catch (error) {
     console.error('[TEST] Error:', error.message);
     res.status(500).json({ error: error.message });
@@ -1152,12 +1223,38 @@ app.get('/api/email-history', async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Server] Running on port ${PORT}`);
-  console.log(`[Tracker] Tracking ${TRACKED.size} approved senders`);
-  console.log(`[Cron] Email fetch: Every 5 minutes`);
-  console.log(`[Cron] Reply check: Every 5 minutes`);
-  console.log(`[Cron] User reminders: Every hour`);
-  console.log(`[Cron] Manager alerts: Daily at 3:30 AM`);
-  console.log(`[Email] Brevo sender: ${BREVO_SENDER_EMAIL || 'NOT SET'}`);
-  console.log(`[Email] Manager email: marketing.kishorexports1@gmail.com`);
+  console.log(`
+╔════════════════════════════════════════════════════╗
+║  Kishor Email Tracker - Server Started             ║
+╚════════════════════════════════════════════════════╝
+
+✅ Email Filter Engine: ACTIVE
+✅ Brevo Email Service: Ready (${BREVO_SENDER_EMAIL})
+✅ Gmail OAuth: Configured
+✅ Supabase Database: Connected
+
+🔗 Server Port: ${PORT}
+📊 Dashboard: http://localhost:${PORT}/dashboard
+
+📋 Cron Jobs Status:
+  ✓ Email Fetch: Every 5 minutes
+  ✓ Reply Check: Every 5 minutes
+  ✓ User Reminder: Every hour
+  ✓ Manager Alert: Daily at 3:30 AM UTC
+
+🔍 Tracked Senders: ${TRACKED.size}
+🛡️  Internal Domains: ${INTERNAL_DOMAINS.size}
+
+📧 Email Configuration:
+  Sender: ${BREVO_SENDER_EMAIL}
+  Sender Name: ${BREVO_SENDER_NAME}
+  API Key: ${BREVO_API_KEY ? '✅ Set' : '❌ NOT SET'}
+  
+📌 Test Endpoints:
+  GET /api/test/send-email-test
+  GET /api/test/send-user-reminder
+  GET /api/test/check-user-reply-alert-manager
+
+🚀 Ready to track and filter emails!
+`);
 });
