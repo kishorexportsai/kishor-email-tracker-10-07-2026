@@ -291,76 +291,59 @@
     .modal {
       background: white;
       border-radius: 10px;
+      max-width: 800px;
       width: 90%;
-      max-width: 700px;
-      max-height: 90vh;
+      max-height: 80vh;
       overflow-y: auto;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+      box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+      padding: 30px;
     }
 
     .modal-header {
-      padding: 20px;
+      margin-bottom: 20px;
       border-bottom: 1px solid #f0f0f0;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      background: #1E3A5F;
-      color: white;
+      padding-bottom: 15px;
     }
 
     .modal-header h2 {
-      font-size: 16px;
-      flex: 1;
+      font-size: 20px;
+      color: #1E3A5F;
       word-break: break-word;
     }
 
-    .modal-close {
-      background: none;
-      border: none;
-      color: white;
-      font-size: 24px;
-      cursor: pointer;
-      width: 30px;
-      height: 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal-body {
-      padding: 20px;
-    }
-
-    .email-info {
+    .modal-info {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 15px;
+      gap: 20px;
       margin-bottom: 20px;
-      padding-bottom: 20px;
-      border-bottom: 1px solid #f0f0f0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 5px;
     }
 
-    .info-group label {
-      font-size: 11px;
+    .modal-info-item {
+      font-size: 13px;
+    }
+
+    .modal-info-label {
       color: #888;
       text-transform: uppercase;
-      display: block;
+      font-size: 11px;
       margin-bottom: 5px;
+      font-weight: 600;
     }
 
-    .info-group span {
-      font-size: 13px;
+    .modal-info-value {
       color: #333;
-      font-weight: 500;
-      word-break: break-all;
+      word-break: break-word;
     }
 
-    .email-content {
-      background: #f9f9f9;
+    .modal-content {
+      margin: 20px 0;
       padding: 15px;
+      background: #f5f5f5;
       border-radius: 5px;
-      margin-bottom: 20px;
-      max-height: 400px;
+      max-height: 300px;
       overflow-y: auto;
       font-size: 13px;
       line-height: 1.6;
@@ -371,13 +354,65 @@
     .modal-actions {
       display: flex;
       gap: 10px;
-      padding-top: 20px;
+      justify-content: flex-end;
+      margin-top: 20px;
       border-top: 1px solid #f0f0f0;
+      padding-top: 15px;
     }
 
-    .modal-actions .btn {
-      flex: 1;
-      padding: 10px;
+    .modal-actions button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    #markRepliedBtn {
+      background: #27AE60;
+      color: white;
+    }
+
+    #markRepliedBtn:hover {
+      background: #1e8449;
+    }
+
+    #closeBtn {
+      background: #e74c3c;
+      color: white;
+    }
+
+    #closeBtn:hover {
+      background: #c0392b;
+    }
+
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #f0f0f0;
+      margin-bottom: 20px;
+    }
+
+    .tab {
+      padding: 12px 20px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      font-size: 14px;
+      font-weight: 600;
+      color: #888;
+      transition: all 0.3s;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+    }
+
+    .tab:hover {
+      color: #1E3A5F;
+    }
+
+    .tab.active {
+      color: #2E86C1;
+      border-bottom-color: #2E86C1;
     }
 
     .alert {
@@ -388,39 +423,31 @@
     }
 
     .alert-success {
-      background: #e8f5e9;
-      color: #2E7D32;
-      border-left: 4px solid #27AE60;
+      background: #e8f8ee;
+      color: #27AE60;
+      border: 1px solid #27AE60;
     }
 
     .alert-info {
       background: #e3f2fd;
-      color: #1565C0;
-      border-left: 4px solid #2196F3;
+      color: #2E86C1;
+      border: 1px solid #2E86C1;
     }
 
-    .button-group {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
+    .alert-warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffc107;
     }
 
-    .info-box {
-      background: #f9f9f9;
-      padding: 15px;
-      border-radius: 5px;
-      margin-bottom: 20px;
-      border-left: 4px solid #2E86C1;
+    .badge.badge-manager {
+      background: #fde8e8;
+      color: #e74c3c;
     }
 
-    .badge-manager {
-      background: #e3f2fd;
-      color: #1565C0;
-    }
-
-    .badge-sender {
-      background: #f3e5f5;
-      color: #6A1B9A;
+    .badge.badge-sender {
+      background: #e8f8ee;
+      color: #27AE60;
     }
   </style>
 </head>
@@ -428,36 +455,41 @@
   <!-- SIDEBAR -->
   <div class="sidebar">
     <h1>📧 Email Tracker</h1>
-    
-    <div class="nav-item active" onclick="showPage('dashboard')">📊 Dashboard</div>
-    <div class="nav-item" onclick="showPage('unreplied')">⚠️ Unreplied</div>
-    <div class="nav-item" onclick="showPage('all')">📬 All Emails</div>
-    <div class="nav-item" onclick="showPage('test')">🧪 Test & Logs</div>
-    
-    <button class="logout-btn" onclick="logout()">🚪 Sign Out</button>
+    <nav>
+      <div class="nav-item active" onclick="switchPage('dashboard')">📊 Dashboard</div>
+      <div class="nav-item" onclick="switchPage('unreplied')">⚠️ Unreplied</div>
+      <div class="nav-item" onclick="switchPage('all')">📋 All Emails</div>
+      <div class="nav-item" onclick="switchPage('test')">🧪 Test Email</div>
+      <div class="nav-item" onclick="switchPage('history')">📜 Email History</div>
+    </nav>
+    <button class="logout-btn" onclick="logout()">🚪 Logout</button>
   </div>
 
   <!-- MAIN CONTENT -->
   <div class="main">
     <!-- DASHBOARD PAGE -->
-    <div class="page active" id="pageDashboard">
+    <div class="page active" id="dashboardPage">
       <div class="header">
-        <h1>Dashboard</h1>
-        <p>Email tracking and management system</p>
+        <h1>Email Tracker Dashboard</h1>
+        <p id="refreshTime">Last updated: Just now</p>
       </div>
 
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">Total Emails</div>
-          <div class="stat-value" id="statTotal">—</div>
+          <div class="stat-value" id="totalStat">—</div>
         </div>
         <div class="stat-card unreplied">
           <div class="stat-label">Unreplied</div>
-          <div class="stat-value" id="statUnreplied">—</div>
+          <div class="stat-value" id="unrepliedStat">—</div>
         </div>
         <div class="stat-card replied">
           <div class="stat-label">Replied</div>
-          <div class="stat-value" id="statReplied">—</div>
+          <div class="stat-value" id="repliedStat">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Today</div>
+          <div class="stat-value" id="todayStat">—</div>
         </div>
       </div>
 
@@ -466,20 +498,17 @@
           <h2>📧 Recent Emails</h2>
           <button class="btn-refresh" onclick="loadStats()">🔄 Refresh</button>
         </div>
-        <div class="card-body" id="emailList">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading emails...
-          </div>
+        <div class="card-body">
+          <div id="emailList" class="loading"><div class="spinner"></div>Loading emails...</div>
         </div>
       </div>
     </div>
 
     <!-- UNREPLIED PAGE -->
-    <div class="page" id="pageUnreplied">
+    <div class="page" id="unrepliedPage">
       <div class="header">
         <h1>⚠️ Unreplied Emails</h1>
-        <p>Emails that need attention - Click to view details</p>
+        <p>Emails waiting for your reply</p>
       </div>
 
       <div class="card">
@@ -487,107 +516,64 @@
           <h2>Unreplied Emails</h2>
           <button class="btn-refresh" onclick="loadUnreplied()">🔄 Refresh</button>
         </div>
-        <div class="card-body" id="unrepliedList">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading emails...
-          </div>
+        <div class="card-body">
+          <div id="unrepliedList" class="loading"><div class="spinner"></div>Loading unreplied emails...</div>
         </div>
       </div>
     </div>
 
     <!-- ALL EMAILS PAGE -->
-    <div class="page" id="pageAll">
+    <div class="page" id="allPage">
       <div class="header">
-        <h1>📬 All Emails</h1>
-        <p>Complete email history - Click to view details</p>
+        <h1>📋 All Emails</h1>
+        <p>Complete email history</p>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2>Email History</h2>
+          <h2>All Emails</h2>
           <button class="btn-refresh" onclick="loadAllEmails()">🔄 Refresh</button>
         </div>
-        <div class="card-body" id="allEmailList">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading emails...
-          </div>
+        <div class="card-body">
+          <div id="allEmailList" class="loading"><div class="spinner"></div>Loading all emails...</div>
         </div>
       </div>
     </div>
 
-    <!-- TEST & LOGS PAGE -->
-    <div class="page" id="pageTest">
+    <!-- TEST EMAIL PAGE -->
+    <div class="page" id="testPage">
       <div class="header">
-        <h1>🧪 Email Testing & Logs</h1>
-        <p>Test reminder emails and view sending history</p>
+        <h1>🧪 Test Email Functions</h1>
+        <p>Test the email reminder and alert system</p>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2>📧 Test Email Features</h2>
+          <h2>Test Sending</h2>
         </div>
         <div class="card-body">
-          <div class="info-box">
-            <strong>ℹ️ How it works:</strong><br>
-            <strong>1. Reminder to User:</strong> Every hour, kishor.merchant06@gmail.com gets a reminder about unreplied emails.<br>
-            <strong>2. Manager Alert:</strong> If user doesn't reply after 24 hours, manager (marketing.kishorexports1@gmail.com) gets an urgent alert.<br>
-            <br>
-            Click the buttons below to test the system immediately.
-          </div>
+          <button class="btn btn-success" onclick="testUserReminder()" style="margin-right: 10px; margin-bottom: 10px;">📧 Send User Reminder</button>
+          <button class="btn btn-success" onclick="testManagerAlert()" style="margin-bottom: 10px;">🚨 Send Manager Alert</button>
 
-          <div class="button-group">
-            <button class="btn btn-success" onclick="testUserReminder()">👤 Test Reminder to User</button>
-            <button class="btn btn-success" onclick="testManagerAlert()">🚨 Test Manager Alert</button>
-            <button class="btn" onclick="loadEmailHistory()">🔄 Refresh History</button>
-          </div>
-
-          <div id="testMessage"></div>
+          <div id="testMessage" style="margin-top: 20px;"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- EMAIL HISTORY PAGE -->
+    <div class="page" id="historyPage">
+      <div class="header">
+        <h1>📜 Email Sending History</h1>
+        <p>Track emails sent to users and managers</p>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2>📜 Email Sending History</h2>
-        </div>
-        <div class="card-body" id="historyContainer">
-          <div class="loading">
-            <div class="spinner"></div>
-            Loading email history...
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>ℹ️ Automated Email Schedule</h2>
+          <h2>Sending History</h2>
+          <button class="btn-refresh" onclick="loadEmailHistory()">🔄 Refresh</button>
         </div>
         <div class="card-body">
-          <table>
-            <thead>
-              <tr>
-                <th>Email Type</th>
-                <th>Frequency</th>
-                <th>Recipient</th>
-                <th>Purpose</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><span class="badge badge-manager">User Reminder</span></td>
-                <td>Every hour</td>
-                <td>kishor.merchant06@gmail.com</td>
-                <td>Reminds user about unreplied emails</td>
-              </tr>
-              <tr>
-                <td><span class="badge badge-sender">Manager Alert</span></td>
-                <td>Daily at 3:30 AM</td>
-                <td>marketing.kishorexports1@gmail.com</td>
-                <td>Alerts manager if user didn't reply after 24 hours</td>
-              </tr>
-            </tbody>
-          </table>
+          <div id="historyContainer" class="loading"><div class="spinner"></div>Loading email history...</div>
         </div>
       </div>
     </div>
@@ -597,86 +583,86 @@
   <div class="modal-overlay" id="emailModal">
     <div class="modal">
       <div class="modal-header">
-        <h2 id="modalSubject">Email Subject</h2>
-        <button class="modal-close" onclick="closeModal()">×</button>
+        <h2 id="modalSubject">—</h2>
       </div>
-      <div class="modal-body">
-        <div id="statusBadge"></div>
 
-        <div class="email-info">
-          <div class="info-group">
-            <label>From</label>
-            <span id="modalFrom">—</span>
-          </div>
-          <div class="info-group">
-            <label>Email</label>
-            <span id="modalEmail">—</span>
-          </div>
-          <div class="info-group">
-            <label>Received</label>
-            <span id="modalDate">—</span>
-          </div>
-          <div class="info-group">
-            <label>Status</label>
-            <span id="modalStatus">—</span>
-          </div>
+      <div class="modal-info">
+        <div class="modal-info-item">
+          <div class="modal-info-label">From</div>
+          <div class="modal-info-value" id="modalFrom">—</div>
         </div>
+        <div class="modal-info-item">
+          <div class="modal-info-label">Email</div>
+          <div class="modal-info-value" id="modalEmail">—</div>
+        </div>
+        <div class="modal-info-item">
+          <div class="modal-info-label">Date</div>
+          <div class="modal-info-value" id="modalDate">—</div>
+        </div>
+        <div class="modal-info-item">
+          <div class="modal-info-label">Status</div>
+          <div id="statusBadge">—</div>
+        </div>
+      </div>
 
-        <label style="font-size: 11px; color: #888; text-transform: uppercase; display: block; margin-bottom: 10px;">Email Content</label>
-        <div class="email-content" id="modalContent">
-          Loading content...
-        </div>
+      <h3 style="color: #666; font-size: 13px; margin-bottom: 10px;">📝 Message Content</h3>
+      <div class="modal-content" id="modalContent">Loading...</div>
 
-        <div class="modal-actions">
-          <button class="btn btn-success" id="markRepliedBtn" onclick="markEmailReplied()">✅ Mark as Replied</button>
-          <button class="btn" onclick="closeModal()">Cancel</button>
-        </div>
+      <div class="modal-actions">
+        <button id="markRepliedBtn" onclick="markEmailReplied()">✅ Mark as Replied</button>
+        <button id="closeBtn" onclick="closeModal()">✕ Close</button>
       </div>
     </div>
   </div>
 
   <script>
-    console.log('[Dashboard] Page loaded');
-
     let currentEmail = null;
 
-    // Navigation
-    function showPage(pageName) {
-      console.log('[Dashboard] Showing page:', pageName);
-      
+    // Switch between pages
+    function switchPage(page) {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-      
-      document.getElementById('page' + pageName.charAt(0).toUpperCase() + pageName.slice(1)).classList.add('active');
+      document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+
+      if (page === 'dashboard') {
+        document.getElementById('dashboardPage').classList.add('active');
+        loadStats();
+      } else if (page === 'unreplied') {
+        document.getElementById('unrepliedPage').classList.add('active');
+        loadUnreplied();
+      } else if (page === 'all') {
+        document.getElementById('allPage').classList.add('active');
+        loadAllEmails();
+      } else if (page === 'test') {
+        document.getElementById('testPage').classList.add('active');
+      } else if (page === 'history') {
+        document.getElementById('historyPage').classList.add('active');
+        loadEmailHistory();
+      }
+
       event.target.classList.add('active');
-      
-      if (pageName === 'dashboard') loadStats();
-      if (pageName === 'unreplied') loadUnreplied();
-      if (pageName === 'all') loadAllEmails();
-      if (pageName === 'test') loadEmailHistory();
     }
 
     // Logout
     function logout() {
-      if (confirm('Are you sure you want to sign out?')) {
-        localStorage.clear();
-        window.location.href = '/';
+      if (confirm('Are you sure you want to logout?')) {
+        window.location.href = '/?logout=true';
       }
     }
 
-    // Load statistics
+    // Load stats
     async function loadStats() {
       try {
         const res = await fetch('/api/stats');
-        const stats = await res.json();
-        
-        document.getElementById('statTotal').textContent = stats.total || 0;
-        document.getElementById('statUnreplied').textContent = stats.unreplied || 0;
-        document.getElementById('statReplied').textContent = stats.replied || 0;
-        
+        const data = await res.json();
+
+        document.getElementById('totalStat').textContent = data.total || 0;
+        document.getElementById('unrepliedStat').textContent = data.unreplied || 0;
+        document.getElementById('repliedStat').textContent = data.replied || 0;
+        document.getElementById('todayStat').textContent = data.today || 0;
+        document.getElementById('refreshTime').textContent = `Last updated: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+
         const emailRes = await fetch('/api/emails?limit=20');
         const emailData = await emailRes.json();
-        
         renderEmailTable(emailData.data || [], 'emailList');
       } catch (error) {
         console.error('[Dashboard] Error loading stats:', error);
@@ -718,14 +704,15 @@
       let html = '<table><thead><tr><th>From</th><th>Subject</th><th>Status</th><th>Date</th></tr></thead><tbody>';
       
       for (const email of emails) {
-        const date = new Date(email.received_at).toLocaleString('en-US', {
+        // ✅ FIXED: Use en-IN with 24-hour format (hour12: false)
+        const date = new Date(email.received_at).toLocaleString('en-IN', {
           year: 'numeric',
-          month: 'numeric',
-          day: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
-          hour12: true,
+          hour12: false,
           timeZone: 'Asia/Kolkata'
         });
         const status = email.status === 'unreplied' ? 'unreplied' : 'replied';
@@ -753,14 +740,15 @@
       document.getElementById('modalSubject').textContent = email.subject || '(No Subject)';
       document.getElementById('modalFrom').textContent = email.sender_name || '—';
       document.getElementById('modalEmail').textContent = email.sender_email || '—';
-      document.getElementById('modalDate').textContent = new Date(email.received_at).toLocaleString('en-US', {
+      // ✅ FIXED: Use en-IN with 24-hour format (hour12: false)
+      document.getElementById('modalDate').textContent = new Date(email.received_at).toLocaleString('en-IN', {
         year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: true,
+        hour12: false,
         timeZone: 'Asia/Kolkata'
       });
       document.getElementById('modalStatus').textContent = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
@@ -919,14 +907,15 @@
         html += '<table><thead><tr><th>Type</th><th>Date & Time</th><th>Recipients</th><th>Count</th></tr></thead><tbody>';
 
         for (const log of data.logs) {
-          const date = new Date(log.sent_at).toLocaleString('en-US', {
+          // ✅ FIXED: Use en-IN with 24-hour format (hour12: false)
+          const date = new Date(log.sent_at).toLocaleString('en-IN', {
             year: 'numeric',
-            month: 'numeric',
-            day: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
-            hour12: true,
+            hour12: false,
             timeZone: 'Asia/Kolkata'
           });
 
