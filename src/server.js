@@ -877,31 +877,41 @@ app.get('/api/emails/unreplied', async (req, res) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const offset = (page - 1) * limit;
 
+    // ✅ FIXED: Query ONLY unreplied AND tracked emails
     const { data, count, error } = await supabase
       .from('emails')
       .select('*', { count: 'exact' })
       .eq('status', 'unreplied')
+      .eq('should_track', true) // ✅ ONLY TRACKED EMAILS
       .order('received_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) throw error;
 
-    // ✅ NEW: SEPARATE TRACKED VS FILTERED
-    const tracked = (data || []).filter(e => e.should_track);
-    const filtered = (data || []).filter(e => !e.should_track);
+    // ✅ Also get filtered count for metrics
+    const { count: filteredCount } = await supabase
+      .from('emails')
+      .select('*', { count: 'exact' })
+      .eq('status', 'unreplied')
+      .eq('should_track', false); // Only auto-replies, etc.
+
+    const trackedCount = count || 0;
+    const filteredCountNum = filteredCount || 0;
+    const totalUnreplied = trackedCount + filteredCountNum;
 
     res.json({
       data: data || [],
-      count: count || 0,
+      count: trackedCount,
       page,
       limit,
-      totalPages: Math.ceil((count || 0) / limit),
-      // ✅ NEW: FILTER METRICS
+      totalPages: Math.ceil(trackedCount / limit),
+      // ✅ FILTER METRICS
       metrics: {
-        tracked: tracked.length,
-        filtered: filtered.length,
-        filterRate: data && data.length > 0 
-          ? ((filtered.length / data.length) * 100).toFixed(1) + '%'
+        total: totalUnreplied,
+        tracked: trackedCount,
+        filtered: filteredCountNum,
+        filterRate: totalUnreplied > 0 
+          ? ((filteredCountNum / totalUnreplied) * 100).toFixed(1) + '%'
           : '0%'
       }
     });
@@ -1085,6 +1095,73 @@ app.get('/api/test/send-email-test', async (req, res) => {
     res.json({ 
       success: result, 
       message: result ? '✅ Test email sent successfully!' : '❌ Test email failed to send'
+    });
+  } catch (error) {
+    console.error('[TEST] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ NEW: Classify existing emails that don't have classification
+app.get('/api/test/classify-existing-emails', async (req, res) => {
+  try {
+    console.log('[TEST] Classifying existing unclassified emails...');
+
+    // Get all emails without classification
+    const { data: unclassifiedEmails, error: fetchError } = await supabase
+      .from('emails')
+      .select('id, sender_name, subject, body_preview')
+      .is('should_track', null) // ✅ No classification yet
+      .limit(100);
+
+    if (fetchError) throw fetchError;
+
+    if (!unclassifiedEmails || unclassifiedEmails.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: '✅ All emails already classified!',
+        classified: 0
+      });
+    }
+
+    console.log(`[TEST] Found ${unclassifiedEmails.length} unclassified emails`);
+
+    let classified = 0;
+
+    // Classify each email
+    for (const email of unclassifiedEmails) {
+      try {
+        const validation = emailFilter.validateReply({
+          from: email.sender_name || '',
+          subject: email.subject || '',
+          body: email.body_preview || ''
+        });
+
+        // Update database with classification
+        const { error: updateError } = await supabase
+          .from('emails')
+          .update({
+            is_automated: !validation.shouldTrack,
+            should_track: validation.shouldTrack,
+            filter_reason: validation.reason,
+            business_category: validation.businessIndicators?.join(', ') || null,
+            classified_at: new Date().toISOString()
+          })
+          .eq('id', email.id);
+
+        if (!updateError) {
+          classified++;
+          console.log(`[TEST] ✅ Classified: ${email.subject} - ${validation.shouldTrack ? 'TRACK' : 'FILTER'}`);
+        }
+      } catch (classifyError) {
+        console.error(`[TEST] Error classifying email ${email.id}:`, classifyError.message);
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `✅ Classified ${classified} emails!`,
+      classified
     });
   } catch (error) {
     console.error('[TEST] Error:', error.message);
