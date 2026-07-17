@@ -823,21 +823,38 @@ app.get('/auth/callback', async (req, res) => {
 
 app.get('/api/stats', async (req, res) => {
   try {
-    const { data: emails, error } = await supabase
+    // ✅ FIXED: Query with filter for tracked emails only
+    const { data: trackedUnreplied, error: error1 } = await supabase
       .from('emails')
-      .select('status, received_at');
+      .select('status', { count: 'exact' })
+      .eq('status', 'unreplied')
+      .eq('should_track', true); // ✅ ONLY TRACKED
 
-    if (error) throw error;
+    const { data: replied, error: error2 } = await supabase
+      .from('emails')
+      .select('status', { count: 'exact' })
+      .eq('status', 'replied');
 
-    const records = emails || [];
+    const { data: allEmails, error: error3 } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact' });
+
+    if (error1 || error2 || error3) throw new Error('Query failed');
+
+    const records = allEmails || [];
     const today = new Date().toISOString().split('T')[0];
 
-    const total = records.length;
-    const unreplied = records.filter(e => e.status === 'unreplied').length;
-    const replied = records.filter(e => e.status === 'replied').length;
-    const todayCount = records.filter(e => e.received_at.startsWith(today)).length;
+    const { data: todayEmails } = await supabase
+      .from('emails')
+      .select('id')
+      .gte('received_at', today);
 
-    res.json({ total, unreplied, replied, today: todayCount });
+    res.json({
+      total: records.length,
+      unreplied: (trackedUnreplied?.length || 0), // ✅ ONLY TRACKED COUNT
+      replied: (replied?.length || 0),
+      today: (todayEmails?.length || 0)
+    });
   } catch (error) {
     console.error('[API] Error loading stats:', error.message);
     res.status(500).json({ error: error.message });
