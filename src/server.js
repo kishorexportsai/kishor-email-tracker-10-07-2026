@@ -523,6 +523,22 @@ app.get('/auth/google', (req, res) => {
   res.redirect(authUrl);
 });
 
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const { code, state: account } = req.query;
+    if (!code) return res.status(400).send('No code');
+
+    const { tokens } = await oauth2Client.getToken(code);
+    await saveToken(account, tokens);
+
+    console.log(`[OAuth] Auth success for ${account}`);
+    res.redirect(`/?google_login=success&email=${encodeURIComponent(account)}`);
+  } catch (error) {
+    console.error('[OAuth] Error:', error.message);
+    res.status(500).send(`Error: ${error.message}`);
+  }
+});
+
 app.get('/auth/callback', async (req, res) => {
   try {
     const { code, state: account } = req.query;
