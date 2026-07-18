@@ -5,7 +5,6 @@ const path = require('path');
 const cron = require('node-cron');
 const { google } = require('googleapis');
 const { createClient } = require('@supabase/supabase-js');
-const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,146 +31,94 @@ console.log('[Brevo] Sender Email:', BREVO_SENDER_EMAIL);
 console.log('[Brevo] API Key Set:', BREVO_API_KEY ? '✅ YES' : '❌ NO');
 
 // =====================================================
-// IMPROVED BREVO EMAIL FUNCTION
+// IMPROVED BREVO EMAIL FUNCTION - USING FETCH API
 // =====================================================
 
 async function sendEmailViaBrevo(to, subject, htmlContent) {
-  return new Promise((resolve) => {
-    try {
-      // Validation 1: Check API Key
-      if (!BREVO_API_KEY) {
-        console.error('[Brevo] ❌ BREVO_API_KEY is missing');
-        resolve({
-          success: false,
-          statusCode: null,
-          error: 'BREVO_API_KEY is not configured'
-        });
-        return;
-      }
+  try {
+    // Validation 1: Check API Key
+    if (!BREVO_API_KEY) {
+      console.error('[Brevo] ❌ BREVO_API_KEY is missing');
+      return {
+        success: false,
+        statusCode: null,
+        error: 'BREVO_API_KEY is not configured'
+      };
+    }
 
-      // Validation 2: Check recipient email
-      if (!to) {
-        console.error('[Brevo] ❌ Recipient email is missing');
-        resolve({
-          success: false,
-          statusCode: null,
-          error: 'Recipient email is missing'
-        });
-        return;
-      }
+    // Validation 2: Check recipient email
+    if (!to) {
+      console.error('[Brevo] ❌ Recipient email is missing');
+      return {
+        success: false,
+        statusCode: null,
+        error: 'Recipient email is missing'
+      };
+    }
 
-      const emailData = JSON.stringify({
+    console.log('[Brevo] ========================================');
+    console.log('[Brevo] Sending email');
+    console.log('[Brevo] To:', to);
+    console.log('[Brevo] Subject:', subject);
+    console.log('[Brevo] From:', BREVO_SENDER_EMAIL);
+    console.log('[Brevo] ========================================');
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'api-key': BREVO_API_KEY,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
         sender: {
           name: BREVO_SENDER_NAME,
           email: BREVO_SENDER_EMAIL
         },
-        to: [
-          {
-            email: to
-          }
-        ],
+        to: [{ email: to }],
         subject,
         htmlContent
-      });
+      })
+    });
 
-      const options = {
-        hostname: 'api.brevo.com',
-        path: '/v3/smtp/email',
-        method: 'POST',
-        headers: {
-          'api-key': BREVO_API_KEY,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(emailData)
-        }
-      };
+    const data = await response.json();
 
-      console.log('[Brevo] ========================================');
-      console.log('[Brevo] Sending email');
-      console.log('[Brevo] To:', to);
-      console.log('[Brevo] Subject:', subject);
-      console.log('[Brevo] From:', BREVO_SENDER_EMAIL);
-      console.log('[Brevo] ========================================');
+    console.log('[Brevo] ========================================');
+    console.log('[Brevo] BREVO RESPONSE');
+    console.log('[Brevo] Status Code:', response.status);
+    console.log('[Brevo] Response Body:', data);
+    console.log('[Brevo] ========================================');
 
-      const req = https.request(options, (res) => {
-        let data = '';
+    if (!response.ok) {
+      console.error('[Brevo] ❌ EMAIL REJECTED BY BREVO');
+      console.error('[Brevo] Status:', response.status);
+      console.error('[Brevo] Error:', data.message || data.code || 'Unknown error');
 
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-
-        res.on('end', () => {
-          let parsedData = data;
-
-          try {
-            parsedData = JSON.parse(data);
-          } catch (parseError) {
-            // Keep raw response if not JSON
-          }
-
-          console.log('[Brevo] ========================================');
-          console.log('[Brevo] BREVO RESPONSE');
-          console.log('[Brevo] Status Code:', res.statusCode);
-          console.log('[Brevo] Response Body:', parsedData);
-          console.log('[Brevo] ========================================');
-
-          const success = res.statusCode >= 200 && res.statusCode < 300;
-
-          if (success) {
-            console.log('[Brevo] ✅ EMAIL ACCEPTED BY BREVO SUCCESSFULLY');
-            console.log('[Brevo] Message ID:', parsedData?.messageId || 'N/A');
-
-            resolve({
-              success: true,
-              statusCode: res.statusCode,
-              messageId: parsedData?.messageId || null,
-              response: parsedData
-            });
-          } else {
-            console.error('[Brevo] ❌ EMAIL REJECTED BY BREVO');
-            console.error('[Brevo] Status:', res.statusCode);
-            console.error('[Brevo] Error:', parsedData?.message || parsedData?.code || 'Unknown error');
-
-            resolve({
-              success: false,
-              statusCode: res.statusCode,
-              error: parsedData?.message || parsedData?.code || 'Brevo API returned an error',
-              response: parsedData
-            });
-          }
-        });
-      });
-
-      req.setTimeout(30000, () => {
-        console.error('[Brevo] ❌ Request timeout');
-        req.destroy();
-        resolve({
-          success: false,
-          statusCode: null,
-          error: 'Brevo request timed out'
-        });
-      });
-
-      req.on('error', (error) => {
-        console.error('[Brevo] ❌ Request error:', error.message);
-        resolve({
-          success: false,
-          statusCode: null,
-          error: error.message
-        });
-      });
-
-      req.write(emailData);
-      req.end();
-
-    } catch (error) {
-      console.error('[Brevo] ❌ Unexpected error:', error.message);
-      resolve({
+      return {
         success: false,
-        statusCode: null,
-        error: error.message
-      });
+        statusCode: response.status,
+        error: data.message || data.code || 'Brevo API returned an error',
+        response: data
+      };
     }
-  });
+
+    console.log('[Brevo] ✅ EMAIL ACCEPTED BY BREVO SUCCESSFULLY');
+    console.log('[Brevo] Message ID:', data.messageId || 'N/A');
+
+    return {
+      success: true,
+      statusCode: response.status,
+      messageId: data.messageId || null,
+      response: data
+    };
+  } catch (error) {
+    console.error('[Brevo] ❌ Request failed:', error.message);
+    return {
+      success: false,
+      statusCode: null,
+      error: error.message
+    };
+  }
 }
 
 // =====================================================
@@ -220,7 +167,7 @@ const TRACKED = new Set([
 ].map(email => email.toLowerCase()));
 
 // =====================================================
-// INTERNAL DOMAINS
+// INTERNAL DOMAINS (✅ UPDATED: Added manager email)
 // =====================================================
 
 const INTERNAL_DOMAINS = new Set([
@@ -228,8 +175,54 @@ const INTERNAL_DOMAINS = new Set([
   'kishor.merchant24@gmail.com',
   'admin@kishorexports.com',
   'kishorexports@gmail.com',
-  'noreply@kishorexports.com'
+  'noreply@kishorexports.com',
+  'marketing.kishorexports1@gmail.com'  // ✅ Added manager email
 ].map(email => email.toLowerCase()));
+
+// =====================================================
+// EMAIL FILTERING - REMOVE AUTOMATIC REPLIES
+// =====================================================
+
+function isAutomaticReply(subject, fromHeader) {
+  if (!subject) return false;
+
+  const subjectLower = subject.toLowerCase();
+  const fromLower = fromHeader.toLowerCase();
+
+  const autoReplyKeywords = [
+    'automatic reply',
+    'autosvar',
+    'out of office',
+    'ooo',
+    'away',
+    'vacation',
+    'sick leave',
+    'maternity leave',
+    'paternity leave',
+    'auto-reply',
+    'automated',
+    'noreply',
+    'no-reply',
+    'do-not-reply',
+    'donotreply',
+    'auto generated',
+    'system message',
+    'undeliverable',
+    'delivery status notification',
+    'mail delivery failed',
+    'failure notice',
+    'postmaster',
+    'mailer-daemon'
+  ];
+
+  for (const keyword of autoReplyKeywords) {
+    if (subjectLower.includes(keyword) || fromLower.includes(keyword)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 // =====================================================
 // UTILITY FUNCTIONS
@@ -353,7 +346,7 @@ async function sendReminderToUser() {
 }
 
 // =====================================================
-// CHECK USER REPLY AND ALERT MANAGER
+// CHECK USER REPLY AND ALERT MANAGER (✅ FIXED: NO DUPLICATES)
 // =====================================================
 
 async function checkUserReplyAndAlertManager() {
@@ -361,18 +354,24 @@ async function checkUserReplyAndAlertManager() {
     console.log('[Manager] Checking if user replied...');
 
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    
+    // ✅ FIXED: Only get emails that:
+    // 1. Are unreplied
+    // 2. Were received more than 24 hours ago
+    // 3. HAVEN'T had manager alert sent yet
     const { data: stillUnreplied, error } = await supabase
       .from('emails')
       .select('id, sender_email, sender_name, subject, received_at')
       .eq('status', 'unreplied')
-      .lt('received_at', oneDayAgo);
+      .lt('received_at', oneDayAgo)
+      .is('manager_alert_sent_at', null);  // ✅ Only if NOT already alerted
 
     if (error || !stillUnreplied || stillUnreplied.length === 0) {
-      console.log('[Manager] All emails have been replied to');
-      return { success: true, message: 'All emails replied' };
+      console.log('[Manager] All emails have been replied to or already alerted');
+      return { success: true, message: 'All emails replied or already alerted' };
     }
 
-    console.log(`[Manager] Found ${stillUnreplied.length} emails still unreplied after 24 hours`);
+    console.log(`[Manager] Found ${stillUnreplied.length} emails still unreplied after 24 hours (and not yet alerted)`);
 
     let emailContent = `<h2>🚨 URGENT: User Did Not Reply</h2><p>User still has NOT replied to ${stillUnreplied.length} emails after 24 hours.</p><ul>`;
 
@@ -390,6 +389,16 @@ async function checkUserReplyAndAlertManager() {
 
     if (result.success) {
       console.log('[Manager] ✅ Manager alert accepted by Brevo');
+      
+      // ✅ FIXED: Mark these emails as alerted so they don't trigger duplicate alerts
+      for (const email of stillUnreplied) {
+        await supabase
+          .from('emails')
+          .update({ manager_alert_sent_at: new Date().toISOString() })
+          .eq('id', email.id);
+      }
+      
+      console.log(`[Manager] ✅ Marked ${stillUnreplied.length} emails as alerted`);
       return { success: true, statusCode: result.statusCode };
     } else {
       console.error('[Manager] ❌ Manager alert failed:', result.error);
@@ -482,7 +491,7 @@ async function checkForReplies(email) {
 }
 
 // =====================================================
-// FETCH ALL EMAILS
+// FETCH ALL EMAILS (WITH FILTERING)
 // =====================================================
 
 async function fetchAllEmails(email) {
@@ -520,6 +529,7 @@ async function fetchAllEmails(email) {
     }
 
     let saved = 0;
+    let filtered = 0;
     const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
 
     for (const message of messages) {
@@ -546,6 +556,13 @@ async function fetchAllEmails(email) {
         const senderEmail = extractSenderEmail(fromHeader);
 
         if (!TRACKED.has(senderEmail) || INTERNAL_DOMAINS.has(senderEmail)) continue;
+
+        // ✅ FILTER: Skip automatic replies
+        if (isAutomaticReply(subject, fromHeader)) {
+          console.log(`[Gmail] ⊘ Filtering automatic reply: "${subject}"`);
+          filtered++;
+          continue;
+        }
 
         const receivedDate = new Date(receivedAtRaw || Date.now());
         if (Number.isNaN(receivedDate.getTime())) continue;
@@ -575,7 +592,7 @@ async function fetchAllEmails(email) {
       }
     }
 
-    console.log(`[Gmail] Saved ${saved} new emails`);
+    console.log(`[Gmail] Saved ${saved} new emails (Filtered: ${filtered} automatic replies)`);
     return saved;
   } catch (error) {
     console.error(`[Gmail] Error:`, error.message);
@@ -834,38 +851,32 @@ app.get('/api/test/email-diagnostics', async (req, res) => {
     status: 'UNKNOWN'
   };
 
-  // Check BREVO_API_KEY
   diagnostics.configuration.brevo_api_key = {
     status: BREVO_API_KEY ? 'PASS' : 'FAIL',
     configured: BREVO_API_KEY ? true : false
   };
 
-  // Check sender email
   diagnostics.configuration.sender_email = {
     status: BREVO_SENDER_EMAIL ? 'PASS' : 'FAIL',
     value: BREVO_SENDER_EMAIL
   };
 
-  // Check sender name
   diagnostics.configuration.sender_name = {
     status: BREVO_SENDER_NAME ? 'PASS' : 'FAIL',
     value: BREVO_SENDER_NAME
   };
 
-  // Check Brevo endpoint
   diagnostics.configuration.brevo_endpoint = {
     status: 'PASS',
     value: 'https://api.brevo.com/v3/smtp/email'
   };
 
-  // Check Supabase
   const supabaseOk = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY;
   diagnostics.configuration.supabase = {
     status: supabaseOk ? 'PASS' : 'FAIL',
     configured: supabaseOk ? true : false
   };
 
-  // Determine overall status
   const failedChecks = Object.values(diagnostics.configuration)
     .filter(c => c.status === 'FAIL').length;
 
