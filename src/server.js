@@ -19,34 +19,59 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // =====================================================
-// EMAIL SETUP - BREVO API (FIXED)
+// BREVO EMAIL CONFIGURATION - VERIFIED SENDER ONLY
 // =====================================================
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Kishor Exports';
-// ✅ FIXED: Use verified sender email
-const BREVO_SENDER_EMAIL = (process.env.BREVO_SENDER_EMAIL || 'kishorexports.ai@gmail.com').trim().toLowerCase();
+const BREVO_SENDER_NAME = 'Kishor Exports';
+const BREVO_SENDER_EMAIL = 'kishorexports.ai@gmail.com'; // ✅ VERIFIED SENDER ONLY
 
-console.log('[Email] Sender:', BREVO_SENDER_EMAIL);
+console.log('[Brevo] Configuration:');
+console.log('[Brevo] Sender Name:', BREVO_SENDER_NAME);
+console.log('[Brevo] Sender Email:', BREVO_SENDER_EMAIL);
+console.log('[Brevo] API Key Set:', BREVO_API_KEY ? '✅ YES' : '❌ NO');
 
-// ✅ FIXED: Send email with proper response logging
+// =====================================================
+// IMPROVED BREVO EMAIL FUNCTION
+// =====================================================
+
 async function sendEmailViaBrevo(to, subject, htmlContent) {
   return new Promise((resolve) => {
     try {
+      // Validation 1: Check API Key
       if (!BREVO_API_KEY) {
-        console.error('[Email] ❌ BREVO_API_KEY not set');
-        resolve(false);
+        console.error('[Brevo] ❌ BREVO_API_KEY is missing');
+        resolve({
+          success: false,
+          statusCode: null,
+          error: 'BREVO_API_KEY is not configured'
+        });
+        return;
+      }
+
+      // Validation 2: Check recipient email
+      if (!to) {
+        console.error('[Brevo] ❌ Recipient email is missing');
+        resolve({
+          success: false,
+          statusCode: null,
+          error: 'Recipient email is missing'
+        });
         return;
       }
 
       const emailData = JSON.stringify({
-        to: [{ email: to }],
-        subject: subject,
-        htmlContent: htmlContent,
-        sender: { 
-          name: BREVO_SENDER_NAME, 
+        sender: {
+          name: BREVO_SENDER_NAME,
           email: BREVO_SENDER_EMAIL
-        }
+        },
+        to: [
+          {
+            email: to
+          }
+        ],
+        subject,
+        htmlContent
       });
 
       const options = {
@@ -60,6 +85,13 @@ async function sendEmailViaBrevo(to, subject, htmlContent) {
         }
       };
 
+      console.log('[Brevo] ========================================');
+      console.log('[Brevo] Sending email');
+      console.log('[Brevo] To:', to);
+      console.log('[Brevo] Subject:', subject);
+      console.log('[Brevo] From:', BREVO_SENDER_EMAIL);
+      console.log('[Brevo] ========================================');
+
       const req = https.request(options, (res) => {
         let data = '';
 
@@ -68,33 +100,76 @@ async function sendEmailViaBrevo(to, subject, htmlContent) {
         });
 
         res.on('end', () => {
-          console.log('[Email] ==============================');
-          console.log('[Email] BREVO RESPONSE');
-          console.log('[Email] Status:', res.statusCode);
-          console.log('[Email] Body:', data);
-          console.log('[Email] ==============================');
+          let parsedData = data;
 
-          if (res.statusCode === 201) {
-            console.log(`[Email] ✅ SUCCESS to ${to}`);
-            resolve(true);
+          try {
+            parsedData = JSON.parse(data);
+          } catch (parseError) {
+            // Keep raw response if not JSON
+          }
+
+          console.log('[Brevo] ========================================');
+          console.log('[Brevo] BREVO RESPONSE');
+          console.log('[Brevo] Status Code:', res.statusCode);
+          console.log('[Brevo] Response Body:', parsedData);
+          console.log('[Brevo] ========================================');
+
+          const success = res.statusCode >= 200 && res.statusCode < 300;
+
+          if (success) {
+            console.log('[Brevo] ✅ EMAIL ACCEPTED BY BREVO SUCCESSFULLY');
+            console.log('[Brevo] Message ID:', parsedData?.messageId || 'N/A');
+
+            resolve({
+              success: true,
+              statusCode: res.statusCode,
+              messageId: parsedData?.messageId || null,
+              response: parsedData
+            });
           } else {
-            console.error('[Email] ❌ Failed -', res.statusCode);
-            resolve(false);
+            console.error('[Brevo] ❌ EMAIL REJECTED BY BREVO');
+            console.error('[Brevo] Status:', res.statusCode);
+            console.error('[Brevo] Error:', parsedData?.message || parsedData?.code || 'Unknown error');
+
+            resolve({
+              success: false,
+              statusCode: res.statusCode,
+              error: parsedData?.message || parsedData?.code || 'Brevo API returned an error',
+              response: parsedData
+            });
           }
         });
       });
 
+      req.setTimeout(30000, () => {
+        console.error('[Brevo] ❌ Request timeout');
+        req.destroy();
+        resolve({
+          success: false,
+          statusCode: null,
+          error: 'Brevo request timed out'
+        });
+      });
+
       req.on('error', (error) => {
-        console.error('[Email] ❌ Error:', error.message);
-        resolve(false);
+        console.error('[Brevo] ❌ Request error:', error.message);
+        resolve({
+          success: false,
+          statusCode: null,
+          error: error.message
+        });
       });
 
       req.write(emailData);
       req.end();
 
     } catch (error) {
-      console.error('[Email] ❌ Exception:', error.message);
-      resolve(false);
+      console.error('[Brevo] ❌ Unexpected error:', error.message);
+      resolve({
+        success: false,
+        statusCode: null,
+        error: error.message
+      });
     }
   });
 }
@@ -235,7 +310,7 @@ function createOAuthClient(tokens, email) {
 
 async function sendReminderToUser() {
   try {
-    console.log('[Reminder] Sending reminder...');
+    console.log('[Reminder] Sending reminder to user...');
 
     const { data: unrepliedEmails, error } = await supabase
       .from('emails')
@@ -244,8 +319,8 @@ async function sendReminderToUser() {
       .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     if (error || !unrepliedEmails || unrepliedEmails.length === 0) {
-      console.log('[Reminder] No unreplied emails');
-      return true;
+      console.log('[Reminder] No unreplied emails to remind about');
+      return { success: true, message: 'No unreplied emails' };
     }
 
     console.log(`[Reminder] Found ${unrepliedEmails.length} unreplied emails`);
@@ -258,16 +333,22 @@ async function sendReminderToUser() {
 
     emailContent += `</ul><p>Please reply as soon as possible.</p>`;
 
-    const sent = await sendEmailViaBrevo(
+    const result = await sendEmailViaBrevo(
       'kishor.merchant06@gmail.com',
       `⚠️ Please Reply: ${unrepliedEmails.length} Unreplied Emails`,
       emailContent
     );
 
-    return sent;
+    if (result.success) {
+      console.log('[Reminder] ✅ Reminder accepted by Brevo');
+      return { success: true, statusCode: result.statusCode };
+    } else {
+      console.error('[Reminder] ❌ Reminder failed:', result.error);
+      return { success: false, error: result.error };
+    }
   } catch (error) {
     console.error('[Reminder] Error:', error.message);
-    return false;
+    return { success: false, error: error.message };
   }
 }
 
@@ -277,7 +358,7 @@ async function sendReminderToUser() {
 
 async function checkUserReplyAndAlertManager() {
   try {
-    console.log('[Manager] Checking user reply...');
+    console.log('[Manager] Checking if user replied...');
 
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: stillUnreplied, error } = await supabase
@@ -287,11 +368,11 @@ async function checkUserReplyAndAlertManager() {
       .lt('received_at', oneDayAgo);
 
     if (error || !stillUnreplied || stillUnreplied.length === 0) {
-      console.log('[Manager] All emails replied');
-      return true;
+      console.log('[Manager] All emails have been replied to');
+      return { success: true, message: 'All emails replied' };
     }
 
-    console.log(`[Manager] Found ${stillUnreplied.length} emails still unreplied`);
+    console.log(`[Manager] Found ${stillUnreplied.length} emails still unreplied after 24 hours`);
 
     let emailContent = `<h2>🚨 URGENT: User Did Not Reply</h2><p>User still has NOT replied to ${stillUnreplied.length} emails after 24 hours.</p><ul>`;
 
@@ -301,16 +382,22 @@ async function checkUserReplyAndAlertManager() {
 
     emailContent += `</ul>`;
 
-    const sent = await sendEmailViaBrevo(
+    const result = await sendEmailViaBrevo(
       'marketing.kishorexports1@gmail.com',
       `🚨 URGENT: ${stillUnreplied.length} Unreplied Emails After 24 Hours`,
       emailContent
     );
 
-    return sent;
+    if (result.success) {
+      console.log('[Manager] ✅ Manager alert accepted by Brevo');
+      return { success: true, statusCode: result.statusCode };
+    } else {
+      console.error('[Manager] ❌ Manager alert failed:', result.error);
+      return { success: false, error: result.error };
+    }
   } catch (error) {
     console.error('[Manager] Error:', error.message);
-    return false;
+    return { success: false, error: error.message };
   }
 }
 
@@ -388,7 +475,7 @@ async function checkForReplies(email) {
       }
     }
 
-    console.log(`[Gmail] Updated ${updated} emails`);
+    console.log(`[Gmail] Updated ${updated} emails to replied status`);
   } catch (error) {
     console.error('[Gmail] Error:', error.message);
   }
@@ -488,7 +575,7 @@ async function fetchAllEmails(email) {
       }
     }
 
-    console.log(`[Gmail] Saved ${saved} emails`);
+    console.log(`[Gmail] Saved ${saved} new emails`);
     return saved;
   } catch (error) {
     console.error(`[Gmail] Error:`, error.message);
@@ -556,151 +643,7 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 // =====================================================
-// EMAIL HISTORY ENDPOINT
-// =====================================================
-
-app.get('/api/email-history', async (req, res) => {
-  try {
-    const { data: logs, error } = await supabase
-      .from('reminder_logs')
-      .select('*')
-      .order('sent_at', { ascending: false })
-      .limit(100);
-
-    if (error) throw error;
-
-    res.json({ 
-      success: true, 
-      total: logs ? logs.length : 0,
-      logs: logs || [] 
-    });
-  } catch (error) {
-    console.error('[API] Error fetching email history:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// =====================================================
-// EMAIL DIAGNOSTICS ENDPOINT
-// =====================================================
-
-app.get('/api/test/email-diagnostics', async (req, res) => {
-  console.log('[TEST] Running email diagnostics...');
-  
-  const diagnostics = {
-    timestamp: new Date().toISOString(),
-    checks: {},
-    recommendation: '',
-    nextSteps: []
-  };
-
-  diagnostics.checks.api_key = {
-    status: BREVO_API_KEY ? 'PASS' : 'FAIL',
-    description: BREVO_API_KEY ? 'BREVO_API_KEY is set' : 'BREVO_API_KEY is MISSING'
-  };
-
-  diagnostics.checks.sender_email = {
-    status: BREVO_SENDER_EMAIL && !BREVO_SENDER_EMAIL.includes('not-set') ? 'PASS' : 'FAIL',
-    value: BREVO_SENDER_EMAIL,
-    description: BREVO_SENDER_EMAIL ? `Sender: ${BREVO_SENDER_EMAIL}` : 'BREVO_SENDER_EMAIL is MISSING'
-  };
-
-  diagnostics.checks.sender_name = {
-    status: BREVO_SENDER_NAME ? 'PASS' : 'FAIL',
-    value: BREVO_SENDER_NAME,
-    description: `Sender name: ${BREVO_SENDER_NAME}`
-  };
-
-  const supabaseOk = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY;
-  diagnostics.checks.supabase = {
-    status: supabaseOk ? 'PASS' : 'FAIL',
-    description: supabaseOk ? 'Supabase configured' : 'Supabase not configured'
-  };
-
-  const failedChecks = Object.values(diagnostics.checks).filter(c => c.status === 'FAIL').length;
-  
-  if (failedChecks === 0) {
-    diagnostics.status = 'ALL_CHECKS_PASSED';
-    diagnostics.recommendation = 'All configuration looks good. Email sending should work.';
-    diagnostics.nextSteps = [
-      'Try sending a test email with /api/test/send-email-test',
-      'Check Render logs for detailed error messages',
-      'If email still fails, check Brevo dashboard for blocked senders'
-    ];
-  } else if (failedChecks <= 2) {
-    diagnostics.status = 'SOME_CHECKS_FAILED';
-    diagnostics.recommendation = 'Fix the failed configuration items below.';
-    diagnostics.nextSteps = [];
-    
-    if (diagnostics.checks.api_key.status === 'FAIL') {
-      diagnostics.nextSteps.push('CRITICAL: Set BREVO_API_KEY in Render environment variables');
-    }
-    if (diagnostics.checks.sender_email.status === 'FAIL') {
-      diagnostics.nextSteps.push('CRITICAL: Set BREVO_SENDER_EMAIL in Render environment variables');
-      diagnostics.nextSteps.push('Make sure the sender email is verified in Brevo dashboard');
-    }
-  } else {
-    diagnostics.status = 'CRITICAL_FAILURE';
-    diagnostics.recommendation = 'Multiple configuration issues. Email sending cannot work.';
-    diagnostics.nextSteps = [
-      'Go to Render → Settings → Environment',
-      'Add all missing environment variables',
-      'Redeploy the application',
-      'Check Brevo dashboard for sender verification'
-    ];
-  }
-
-  res.json(diagnostics);
-});
-
-// =====================================================
-// DIRECT EMAIL TEST ENDPOINT
-// =====================================================
-
-app.get('/api/test/send-direct-email', async (req, res) => {
-  console.log('[TEST] ========================================');
-  console.log('[TEST] DIRECT EMAIL TEST - FULL DIAGNOSTIC');
-  console.log('[TEST] ========================================');
-  console.log('[TEST] Configuration:');
-  console.log('[TEST]   API Key Present:', BREVO_API_KEY ? 'YES ✅' : 'NO ❌');
-  console.log('[TEST]   Sender Email:', BREVO_SENDER_EMAIL);
-  console.log('[TEST]   Sender Name:', BREVO_SENDER_NAME);
-  console.log('[TEST] ========================================');
-  
-  const testEmail = 'kishor.merchant06@gmail.com';
-  const testSubject = '🧪 Direct Email Test from Kishor Tracker';
-  const testContent = `
-<h2>Email Configuration Test</h2>
-<p>This is a direct test email from your Kishor Email Tracker.</p>
-<p><strong>If you received this, email sending is WORKING!</strong></p>
-<p style="color: #888; font-size: 12px;">
-  Sent at: ${new Date().toISOString()}<br>
-  From: ${BREVO_SENDER_EMAIL}<br>
-  To: ${testEmail}
-</p>
-`;
-
-  console.log('[TEST] Attempting to send test email...');
-  const result = await sendEmailViaBrevo(testEmail, testSubject, testContent);
-  
-  console.log('[TEST] Result:', result ? 'SUCCESS ✅' : 'FAILED ❌');
-  console.log('[TEST] ========================================');
-
-  res.json({
-    success: result,
-    message: result 
-      ? '✅ Test email sent! Check your inbox for: kishor.merchant06@gmail.com'
-      : '❌ Email send failed. Check Render logs above for error details.',
-    details: {
-      recipient: testEmail,
-      sender: BREVO_SENDER_EMAIL,
-      timestamp: new Date().toISOString()
-    }
-  });
-});
-
-// =====================================================
-// API ENDPOINTS
+// API ENDPOINTS - STATISTICS
 // =====================================================
 
 app.get('/api/stats', async (req, res) => {
@@ -723,6 +666,10 @@ app.get('/api/stats', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// =====================================================
+// API ENDPOINTS - EMAIL RETRIEVAL
+// =====================================================
 
 app.get('/api/emails', async (req, res) => {
   try {
@@ -844,107 +791,7 @@ app.get('/api/emails/:emailId/body', async (req, res) => {
 });
 
 // =====================================================
-// SEND SENDER REMINDER EMAIL
-// =====================================================
-
-async function sendSenderReminder() {
-  try {
-    console.log('[Reminder] Sending reminders to email senders...');
-
-    const { data: unrepliedEmails, error } = await supabase
-      .from('emails')
-      .select('sender_email, sender_name, subject, received_at')
-      .eq('status', 'unreplied')
-      .gte('received_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-    if (error || !unrepliedEmails || unrepliedEmails.length === 0) {
-      console.log('[Reminder] No unreplied emails to remind about');
-      return;
-    }
-
-    const emailsBySender = {};
-    for (const email of unrepliedEmails) {
-      if (!emailsBySender[email.sender_email]) {
-        emailsBySender[email.sender_email] = [];
-      }
-      emailsBySender[email.sender_email].push(email);
-    }
-
-    for (const [senderEmail, emails] of Object.entries(emailsBySender)) {
-      try {
-        const senderName = emails[0].sender_name || senderEmail.split('@')[0];
-        const oldestEmail = emails.reduce((oldest, current) => {
-          return new Date(current.received_at) < new Date(oldest.received_at) ? current : oldest;
-        });
-
-        const waitingTime = Math.floor((Date.now() - new Date(oldestEmail.received_at).getTime()) / (60 * 60 * 1000));
-
-        let emailContent = `
-<h2>📧 We're Waiting for Your Response</h2>
-<p>Hi ${senderName},</p>
-<p>We noticed that your email(s) to us have not been replied to. Here's a summary:</p>
-<ul>`;
-
-        for (const email of emails) {
-          emailContent += `<li><strong>${email.subject}</strong> (sent ${Math.floor((Date.now() - new Date(email.received_at).getTime()) / (60 * 1000))} minutes ago)</li>`;
-        }
-
-        emailContent += `</ul>
-<p>We're committed to excellent customer service and would love to hear from you.</p>
-<p>Please reply to any of your previous emails or reach out if you need further assistance.</p>
-<p>Best regards,<br/>Kishor Exports Team</p>
-`;
-
-        const reminderSent = await sendEmailViaBrevo(
-          senderEmail,
-          `⏰ Reminder: We're Waiting for Your Response`,
-          emailContent
-        );
-
-        if (reminderSent) {
-          console.log(`[Reminder] ✅ Reminder sent to ${senderEmail} for ${emails.length} email(s)`);
-        } else {
-          console.error(`[Reminder] ❌ Failed to send reminder to ${senderEmail}`);
-        }
-      } catch (emailError) {
-        console.error(`[Reminder] Error sending to ${senderEmail}:`, emailError.message);
-      }
-    }
-  } catch (error) {
-    console.error('[Reminder] Error:', error.message);
-  }
-}
-
-// =====================================================
-// HTML TO PLAIN TEXT HELPER
-// =====================================================
-
-function htmlToPlainText(html) {
-  if (!html) return '';
-  
-  let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-  text = text.replace(/<!--[\s\S]*?-->/g, '');
-  text = text.replace(/&nbsp;/g, ' ');
-  text = text.replace(/&lt;/g, '<');
-  text = text.replace(/&gt;/g, '>');
-  text = text.replace(/&quot;/g, '"');
-  text = text.replace(/&apos;/g, "'");
-  text = text.replace(/&amp;/g, '&');
-  text = text.replace(/&#39;/g, "'");
-  text = text.replace(/<br\s*\/?>/gi, '\n');
-  text = text.replace(/<\/(p|div|blockquote|table)>/gi, '\n');
-  text = text.replace(/<tr>/gi, '\n');
-  text = text.replace(/<td>/gi, '  ');
-  text = text.replace(/<[^>]+>/g, '');
-  text = text.replace(/\n\s*\n/g, '\n');
-  text = text.trim();
-  
-  return text;
-}
-
-// =====================================================
-// API ENDPOINTS - PATCH
+// API ENDPOINTS - EMAIL STATUS UPDATE
 // =====================================================
 
 app.patch('/api/emails/:emailId/status', async (req, res) => {
@@ -975,47 +822,163 @@ app.patch('/api/emails/:emailId/status', async (req, res) => {
 });
 
 // =====================================================
-// TEST ENDPOINTS
+// EMAIL DIAGNOSTICS ENDPOINT
 // =====================================================
 
-app.get('/api/test/send-email-test', async (req, res) => {
-  try {
-    console.log('[TEST] Testing email send...');
-    const result = await sendEmailViaBrevo(
-      'kishor.merchant06@gmail.com',
-      '✅ Test Email from Kishor Tracker',
-      '<h2>Test Email</h2><p>If you received this, email sending works!</p>'
-    );
-    res.json({ 
-      success: result, 
-      message: result ? '✅ Test email sent!' : '❌ Test email failed'
+app.get('/api/test/email-diagnostics', async (req, res) => {
+  console.log('[Diagnostics] Running email configuration check...');
+  
+  const diagnostics = {
+    timestamp: new Date().toISOString(),
+    configuration: {},
+    status: 'UNKNOWN'
+  };
+
+  // Check BREVO_API_KEY
+  diagnostics.configuration.brevo_api_key = {
+    status: BREVO_API_KEY ? 'PASS' : 'FAIL',
+    configured: BREVO_API_KEY ? true : false
+  };
+
+  // Check sender email
+  diagnostics.configuration.sender_email = {
+    status: BREVO_SENDER_EMAIL ? 'PASS' : 'FAIL',
+    value: BREVO_SENDER_EMAIL
+  };
+
+  // Check sender name
+  diagnostics.configuration.sender_name = {
+    status: BREVO_SENDER_NAME ? 'PASS' : 'FAIL',
+    value: BREVO_SENDER_NAME
+  };
+
+  // Check Brevo endpoint
+  diagnostics.configuration.brevo_endpoint = {
+    status: 'PASS',
+    value: 'https://api.brevo.com/v3/smtp/email'
+  };
+
+  // Check Supabase
+  const supabaseOk = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY;
+  diagnostics.configuration.supabase = {
+    status: supabaseOk ? 'PASS' : 'FAIL',
+    configured: supabaseOk ? true : false
+  };
+
+  // Determine overall status
+  const failedChecks = Object.values(diagnostics.configuration)
+    .filter(c => c.status === 'FAIL').length;
+
+  if (failedChecks === 0) {
+    diagnostics.status = 'ALL_CHECKS_PASSED';
+    diagnostics.message = 'Configuration looks good. Email sending should work.';
+  } else {
+    diagnostics.status = 'CONFIGURATION_INCOMPLETE';
+    diagnostics.message = `${failedChecks} configuration checks failed.`;
+  }
+
+  res.json(diagnostics);
+});
+
+// =====================================================
+// DIRECT EMAIL TEST ENDPOINT
+// =====================================================
+
+app.get('/api/test/send-direct-email', async (req, res) => {
+  console.log('[Test] ========================================');
+  console.log('[Test] DIRECT EMAIL TEST - FULL DIAGNOSTIC');
+  console.log('[Test] ========================================');
+  console.log('[Test] Configuration:');
+  console.log('[Test]   Brevo API Key:', BREVO_API_KEY ? '✅ Set' : '❌ NOT SET');
+  console.log('[Test]   Sender Email:', BREVO_SENDER_EMAIL);
+  console.log('[Test]   Sender Name:', BREVO_SENDER_NAME);
+  console.log('[Test] ========================================');
+  
+  const testEmail = 'kishor.merchant06@gmail.com';
+  const testSubject = '🧪 Brevo Direct Test Email';
+  const testContent = `
+<h2>Brevo Test</h2>
+<p>This is a direct test email from the Kishor Exports Email Tracker.</p>
+<p><strong>If you receive this email, Brevo API sending is working correctly.</strong></p>
+<p style="color: #888; font-size: 12px;">
+  Sent at: ${new Date().toISOString()}<br>
+  From: ${BREVO_SENDER_EMAIL}<br>
+  To: ${testEmail}
+</p>
+`;
+
+  console.log('[Test] Attempting to send test email...');
+  const result = await sendEmailViaBrevo(testEmail, testSubject, testContent);
+  
+  console.log('[Test] Result:', result.success ? '✅ SUCCESS' : '❌ FAILED');
+  console.log('[Test] ========================================');
+
+  if (result.success) {
+    res.json({
+      success: true,
+      message: 'Email accepted by Brevo',
+      statusCode: result.statusCode,
+      messageId: result.messageId
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } else {
+    res.status(400).json({
+      success: false,
+      message: 'Email was not accepted by Brevo',
+      statusCode: result.statusCode,
+      error: result.error
+    });
   }
 });
+
+// =====================================================
+// TEST REMINDER ENDPOINT
+// =====================================================
 
 app.get('/api/test/send-user-reminder', async (req, res) => {
   try {
-    console.log('[TEST] Testing user reminder...');
-    const sent = await sendReminderToUser();
-    res.json({ 
-      success: sent, 
-      message: sent ? '✅ Reminder sent!' : '❌ Reminder failed'
-    });
+    console.log('[Test] Testing user reminder...');
+    const result = await sendReminderToUser();
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: '✅ Reminder accepted by Brevo',
+        statusCode: result.statusCode
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: '❌ Reminder failed',
+        error: result.error
+      });
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
+// =====================================================
+// TEST MANAGER ALERT ENDPOINT
+// =====================================================
+
 app.get('/api/test/check-user-reply-alert-manager', async (req, res) => {
   try {
-    console.log('[TEST] Testing manager alert...');
-    const sent = await checkUserReplyAndAlertManager();
-    res.json({ 
-      success: sent, 
-      message: sent ? '✅ Manager alert sent!' : '❌ Manager alert failed'
-    });
+    console.log('[Test] Testing manager alert...');
+    const result = await checkUserReplyAndAlertManager();
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: '✅ Manager alert accepted by Brevo',
+        statusCode: result.statusCode
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: '❌ Manager alert failed',
+        error: result.error
+      });
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1072,12 +1035,17 @@ cron.schedule('30 3 * * *', async () => {
 // =====================================================
 
 app.listen(PORT, '0.0.0.0', () => {
+  console.log('[Server] ========================================');
+  console.log('[Server] KISHOR EMAIL TRACKER STARTED');
+  console.log('[Server] ========================================');
   console.log(`[Server] Running on port ${PORT}`);
-  console.log(`[Tracker] Tracking ${TRACKED.size} senders`);
-  console.log(`[Cron] Email fetch: Every 5 minutes`);
-  console.log(`[Cron] Reply check: Every 5 minutes`);
-  console.log(`[Cron] User reminder: Every hour`);
-  console.log(`[Cron] Manager alert: Daily at 3:30 AM`);
-  console.log(`[Email] Sender: ${BREVO_SENDER_EMAIL}`);
-  console.log('✅ Server started!');
+  console.log(`[Server] Tracking ${TRACKED.size} senders`);
+  console.log(`[Server] Brevo sender: ${BREVO_SENDER_EMAIL}`);
+  console.log('[Server] ========================================');
+  console.log('[Cron] Email fetch: Every 5 minutes');
+  console.log('[Cron] Reply check: Every 5 minutes');
+  console.log('[Cron] User reminder: Every hour (0:00)');
+  console.log('[Cron] Manager alert: Daily at 3:30 AM UTC');
+  console.log('[Server] ========================================');
+  console.log('✅ Server is ready!');
 });
