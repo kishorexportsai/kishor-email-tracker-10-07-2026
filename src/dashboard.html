@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kishor Exports - Email Tracker Dashboard</title>
+  <title>Kishor Exports - Email Tracker</title>
   <style>
     * {
       margin: 0;
@@ -12,187 +12,176 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f0f2f5;
-      color: #333;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;
     }
 
     .sidebar {
-      position: fixed;
-      left: 0;
-      top: 0;
-      bottom: 0;
       width: 250px;
-      background: #1E3A5F;
+      background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+      padding: 30px 20px;
       color: white;
-      padding: 20px;
       overflow-y: auto;
-      z-index: 100;
     }
 
-    .sidebar h1 {
-      font-size: 18px;
+    .sidebar-title {
+      font-size: 24px;
+      font-weight: bold;
       margin-bottom: 30px;
-      border-bottom: 1px solid rgba(255,255,255,0.2);
-      padding-bottom: 15px;
+      color: #fff;
+    }
+
+    .nav-section {
+      margin-bottom: 30px;
+    }
+
+    .nav-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #999;
+      letter-spacing: 1px;
+      margin-bottom: 15px;
+      font-weight: 600;
     }
 
     .nav-item {
-      padding: 12px 0;
+      display: flex;
+      align-items: center;
+      padding: 12px 15px;
+      margin-bottom: 8px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 14px;
       transition: all 0.3s;
+      color: #ccc;
+      text-decoration: none;
+      font-size: 14px;
       border-left: 3px solid transparent;
-      padding-left: 10px;
     }
 
     .nav-item:hover {
       background: rgba(255,255,255,0.1);
-      border-left-color: #2E86C1;
+      color: white;
+      border-left-color: #667eea;
     }
 
     .nav-item.active {
-      background: rgba(46,134,193,0.2);
-      border-left-color: #2E86C1;
-      font-weight: 600;
-    }
-
-    .logout-btn {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
-      padding: 10px;
-      background: rgba(255,255,255,0.1);
-      border: none;
+      background: #667eea;
       color: white;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
+      border-left-color: #667eea;
     }
 
-    .logout-btn:hover {
-      background: rgba(231,76,60,0.4);
+    .nav-icon {
+      margin-right: 12px;
+      font-size: 16px;
     }
 
-    .main {
-      margin-left: 250px;
+    .main-content {
+      flex: 1;
       padding: 30px;
+      overflow-y: auto;
+      background: #f5f7fa;
     }
 
     .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 30px;
     }
 
-    .header h1 {
-      font-size: 28px;
-      color: #1E3A5F;
+    .header-title {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header-title h1 {
+      font-size: 32px;
+      color: white;
       margin-bottom: 5px;
     }
 
-    .header p {
-      color: #888;
+    .header-title p {
+      color: rgba(255,255,255,0.7);
       font-size: 14px;
     }
 
-    .stats-grid {
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+
+    .btn-refresh {
+      background: white;
+      color: #667eea;
+    }
+
+    .btn-refresh:hover {
+      background: #f0f0f0;
+    }
+
+    .stats-container {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(4, 1fr);
       gap: 20px;
       margin-bottom: 30px;
     }
 
     .stat-card {
       background: white;
-      border-radius: 10px;
-      padding: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      border-left: 4px solid #2E86C1;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
 
-    .stat-card.unreplied {
-      border-left-color: #E74C3C;
-    }
-
-    .stat-card.replied {
-      border-left-color: #27AE60;
+    .stat-number {
+      font-size: 36px;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 10px;
     }
 
     .stat-label {
+      color: #999;
       font-size: 12px;
-      color: #888;
       text-transform: uppercase;
-      margin-bottom: 8px;
+      letter-spacing: 0.5px;
     }
 
-    .stat-value {
-      font-size: 32px;
-      font-weight: 700;
-      color: #1E3A5F;
-    }
-
-    .card {
+    .content-card {
       background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-      overflow: hidden;
-      margin-bottom: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 30px;
     }
 
     .card-header {
-      padding: 20px;
-      border-bottom: 1px solid #f0f0f0;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
     }
 
     .card-header h2 {
-      font-size: 16px;
-      color: #1E3A5F;
+      color: #333;
+      font-size: 18px;
+      margin: 0;
     }
 
-    .btn-refresh {
-      padding: 8px 16px;
-      background: #2E86C1;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    .btn-refresh:hover {
-      background: #1E5A96;
-    }
-
-    .btn {
-      padding: 10px 16px;
-      background: #2E86C1;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-      transition: all 0.3s;
-    }
-
-    .btn:hover {
-      background: #1E5A96;
-      transform: translateY(-2px);
-    }
-
-    .btn-success {
-      background: #27AE60;
-    }
-
-    .btn-success:hover {
-      background: #1e8449;
-    }
-
-    .card-body {
-      padding: 20px;
+    .table-wrapper {
+      overflow-x: auto;
     }
 
     table {
@@ -201,761 +190,676 @@
     }
 
     th {
-      padding: 12px 0;
+      padding: 15px;
       text-align: left;
-      font-size: 12px;
-      color: #888;
-      text-transform: uppercase;
-      border-bottom: 1px solid #f0f0f0;
       font-weight: 600;
+      color: #999;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid #f0f0f0;
+      background: #fafafa;
     }
 
     td {
-      padding: 12px 0;
+      padding: 15px;
+      border-bottom: 1px solid #f0f0f0;
+      color: #555;
       font-size: 13px;
-      border-bottom: 1px solid #f5f5f5;
     }
 
-    tr.clickable {
+    tbody tr {
+      transition: all 0.3s;
       cursor: pointer;
-      transition: background 0.2s;
     }
 
-    tr.clickable:hover {
+    tbody tr:hover {
       background: #f9f9f9;
+    }
+
+    .sender-name {
+      font-weight: 600;
+      color: #333;
+    }
+
+    .subject {
+      color: #666;
     }
 
     .badge {
       display: inline-block;
-      padding: 3px 10px;
+      padding: 4px 12px;
       border-radius: 20px;
       font-size: 11px;
       font-weight: 600;
     }
 
-    .badge.unreplied {
-      background: #fde8e8;
-      color: #e74c3c;
+    .badge-unreplied {
+      background: #fee2e2;
+      color: #dc2626;
     }
 
-    .badge.replied {
-      background: #e8f8ee;
-      color: #27AE60;
+    .badge-replied {
+      background: #dcfce7;
+      color: #059669;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #999;
+    }
+
+    .empty-state h3 {
+      font-size: 18px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
+    /* MODAL STYLES */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.6);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .modal.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 700px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    .modal-header {
+      padding: 25px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 12px 12px 0 0;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 32px;
+      color: white;
+      cursor: pointer;
+      padding: 0;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.3s;
+    }
+
+    .close-btn:hover {
+      transform: scale(1.2);
+    }
+
+    .modal-body {
+      padding: 25px;
+    }
+
+    .email-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .email-row:last-child {
+      border-bottom: none;
+    }
+
+    .email-label {
+      font-weight: 600;
+      color: #667eea;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .email-value {
+      color: #333;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .email-content-box {
+      background: #f9f9f9;
+      padding: 20px;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      color: #555;
+      line-height: 1.6;
+      font-size: 13px;
+      border: 1px solid #f0f0f0;
+    }
+
+    .modal-footer {
+      padding: 20px 25px;
+      border-top: 1px solid #f0f0f0;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      background: #fafafa;
+      border-radius: 0 0 12px 12px;
+    }
+
+    .btn-small {
+      padding: 8px 16px;
+      font-size: 12px;
+    }
+
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #059669;
+    }
+
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #d97706;
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #4b5563;
+    }
+
+    .hidden {
+      display: none !important;
     }
 
     .loading {
       text-align: center;
       padding: 40px;
-      color: #888;
-    }
-
-    .spinner {
-      display: inline-block;
-      width: 30px;
-      height: 30px;
-      border: 3px solid #f3f3f3;
-      border-top: 3px solid #2E86C1;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 15px;
-    }
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .page {
-      display: none;
-    }
-
-    .page.active {
-      display: block;
-    }
-
-    /* MODAL STYLES */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 1000;
-    }
-
-    .modal-overlay.open {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal {
-      background: white;
-      border-radius: 10px;
-      max-width: 800px;
-      width: 90%;
-      max-height: 80vh;
-      overflow-y: auto;
-      box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-      padding: 30px;
-    }
-
-    .modal-header {
-      margin-bottom: 20px;
-      border-bottom: 1px solid #f0f0f0;
-      padding-bottom: 15px;
-    }
-
-    .modal-header h2 {
-      font-size: 20px;
-      color: #1E3A5F;
-      word-break: break-word;
-    }
-
-    .modal-info {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 20px;
-      padding: 15px;
-      background: #f9f9f9;
-      border-radius: 5px;
-    }
-
-    .modal-info-item {
-      font-size: 13px;
-    }
-
-    .modal-info-label {
-      color: #888;
-      text-transform: uppercase;
-      font-size: 11px;
-      margin-bottom: 5px;
-      font-weight: 600;
-    }
-
-    .modal-info-value {
-      color: #333;
-      word-break: break-word;
-    }
-
-    .modal-content {
-      margin: 20px 0;
-      padding: 15px;
-      background: #f5f5f5;
-      border-radius: 5px;
-      max-height: 300px;
-      overflow-y: auto;
-      font-size: 13px;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
-
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-      margin-top: 20px;
-      border-top: 1px solid #f0f0f0;
-      padding-top: 15px;
-    }
-
-    .modal-actions button {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    #markRepliedBtn {
-      background: #27AE60;
-      color: white;
-    }
-
-    #markRepliedBtn:hover {
-      background: #1e8449;
-    }
-
-    #closeBtn {
-      background: #e74c3c;
-      color: white;
-    }
-
-    #closeBtn:hover {
-      background: #c0392b;
-    }
-
-    .tabs {
-      display: flex;
-      border-bottom: 2px solid #f0f0f0;
-      margin-bottom: 20px;
-    }
-
-    .tab {
-      padding: 12px 20px;
-      cursor: pointer;
-      border: none;
-      background: none;
-      font-size: 14px;
-      font-weight: 600;
-      color: #888;
-      transition: all 0.3s;
-      border-bottom: 3px solid transparent;
-      margin-bottom: -2px;
-    }
-
-    .tab:hover {
-      color: #1E3A5F;
-    }
-
-    .tab.active {
-      color: #2E86C1;
-      border-bottom-color: #2E86C1;
-    }
-
-    .alert {
-      padding: 15px;
-      border-radius: 5px;
-      margin-bottom: 15px;
-      font-size: 13px;
-    }
-
-    .alert-success {
-      background: #e8f8ee;
-      color: #27AE60;
-      border: 1px solid #27AE60;
-    }
-
-    .alert-info {
-      background: #e3f2fd;
-      color: #2E86C1;
-      border: 1px solid #2E86C1;
-    }
-
-    .alert-warning {
-      background: #fff3cd;
-      color: #856404;
-      border: 1px solid #ffc107;
-    }
-
-    .badge.badge-manager {
-      background: #fde8e8;
-      color: #e74c3c;
-    }
-
-    .badge.badge-sender {
-      background: #e8f8ee;
-      color: #27AE60;
+      color: #999;
     }
   </style>
 </head>
 <body>
+
+<div class="container">
   <!-- SIDEBAR -->
   <div class="sidebar">
-    <h1>📧 Email Tracker</h1>
-    <nav>
-      <div class="nav-item active" onclick="switchPage('dashboard')">📊 Dashboard</div>
-      <div class="nav-item" onclick="switchPage('unreplied')">⚠️ Unreplied</div>
-      <div class="nav-item" onclick="switchPage('all')">📋 All Emails</div>
-      <div class="nav-item" onclick="switchPage('test')">🧪 Test Email</div>
-      <div class="nav-item" onclick="switchPage('history')">📜 Email History</div>
-    </nav>
-    <button class="logout-btn" onclick="logout()">🚪 Logout</button>
+    <div class="sidebar-title">📧 Email Tracker</div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Menu</div>
+      <a class="nav-item active" onclick="showDashboard()">
+        <span class="nav-icon">📊</span> Dashboard
+      </a>
+      <a class="nav-item" onclick="showUnreplied()">
+        <span class="nav-icon">⚠️</span> Unreplied
+      </a>
+      <a class="nav-item" onclick="showAllEmails()">
+        <span class="nav-icon">📬</span> All Emails
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Tools</div>
+      <a class="nav-item" onclick="showTests()">
+        <span class="nav-icon">🧪</span> Test Email
+      </a>
+    </div>
   </div>
 
   <!-- MAIN CONTENT -->
-  <div class="main">
-    <!-- DASHBOARD PAGE -->
-    <div class="page active" id="dashboardPage">
+  <div class="main-content">
+    <!-- DASHBOARD SECTION -->
+    <div id="dashboard-section">
       <div class="header">
-        <h1>Email Tracker Dashboard</h1>
-        <p id="refreshTime">Last updated: Just now</p>
+        <div class="header-title">
+          <h1>Dashboard</h1>
+          <p>Email tracking overview</p>
+        </div>
+        <button class="btn btn-refresh" onclick="refreshStats()">🔄 Refresh</button>
       </div>
 
-      <div class="stats-grid">
+      <div class="stats-container">
         <div class="stat-card">
+          <div class="stat-number" id="stat-total">0</div>
           <div class="stat-label">Total Emails</div>
-          <div class="stat-value" id="totalStat">—</div>
-        </div>
-        <div class="stat-card unreplied">
-          <div class="stat-label">Unreplied</div>
-          <div class="stat-value" id="unrepliedStat">—</div>
-        </div>
-        <div class="stat-card replied">
-          <div class="stat-label">Replied</div>
-          <div class="stat-value" id="repliedStat">—</div>
         </div>
         <div class="stat-card">
+          <div class="stat-number" id="stat-unreplied">0</div>
+          <div class="stat-label">Unreplied</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-replied">0</div>
+          <div class="stat-label">Replied</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-today">0</div>
           <div class="stat-label">Today</div>
-          <div class="stat-value" id="todayStat">—</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>📧 Recent Emails</h2>
-          <button class="btn-refresh" onclick="loadStats()">🔄 Refresh</button>
-        </div>
-        <div class="card-body">
-          <div id="emailList" class="loading"><div class="spinner"></div>Loading emails...</div>
         </div>
       </div>
     </div>
 
-    <!-- UNREPLIED PAGE -->
-    <div class="page" id="unrepliedPage">
+    <!-- UNREPLIED SECTION -->
+    <div id="unreplied-section" class="hidden">
       <div class="header">
-        <h1>⚠️ Unreplied Emails</h1>
-        <p>Emails waiting for your reply</p>
+        <div class="header-title">
+          <h1>⚠️ Unreplied Emails</h1>
+          <p>Emails waiting for your reply</p>
+        </div>
+        <button class="btn btn-refresh" onclick="loadUnrepliedEmails()">🔄 Refresh</button>
       </div>
 
-      <div class="card">
+      <div class="content-card">
         <div class="card-header">
           <h2>Unreplied Emails</h2>
-          <button class="btn-refresh" onclick="loadUnreplied()">🔄 Refresh</button>
         </div>
-        <div class="card-body">
-          <div id="unrepliedList" class="loading"><div class="spinner"></div>Loading unreplied emails...</div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>FROM</th>
+                <th>SUBJECT</th>
+                <th>STATUS</th>
+                <th>DATE</th>
+              </tr>
+            </thead>
+            <tbody id="unreplied-tbody">
+              <tr><td colspan="4" class="loading">Loading...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <!-- ALL EMAILS PAGE -->
-    <div class="page" id="allPage">
+    <!-- ALL EMAILS SECTION -->
+    <div id="all-section" class="hidden">
       <div class="header">
-        <h1>📋 All Emails</h1>
-        <p>Complete email history</p>
+        <div class="header-title">
+          <h1>📬 All Emails</h1>
+          <p>Complete email history</p>
+        </div>
+        <button class="btn btn-refresh" onclick="loadAllEmails()">🔄 Refresh</button>
       </div>
 
-      <div class="card">
+      <div class="content-card">
         <div class="card-header">
           <h2>All Emails</h2>
-          <button class="btn-refresh" onclick="loadAllEmails()">🔄 Refresh</button>
         </div>
-        <div class="card-body">
-          <div id="allEmailList" class="loading"><div class="spinner"></div>Loading all emails...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TEST EMAIL PAGE -->
-    <div class="page" id="testPage">
-      <div class="header">
-        <h1>🧪 Test Email Functions</h1>
-        <p>Test the email reminder and alert system</p>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>Test Sending</h2>
-        </div>
-        <div class="card-body">
-          <button class="btn btn-success" onclick="testUserReminder()" style="margin-right: 10px; margin-bottom: 10px;">📧 Send User Reminder</button>
-          <button class="btn btn-success" onclick="testManagerAlert()" style="margin-bottom: 10px;">🚨 Send Manager Alert</button>
-
-          <div id="testMessage" style="margin-top: 20px;"></div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>FROM</th>
+                <th>SUBJECT</th>
+                <th>STATUS</th>
+                <th>DATE</th>
+              </tr>
+            </thead>
+            <tbody id="all-tbody">
+              <tr><td colspan="4" class="loading">Loading...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <!-- EMAIL HISTORY PAGE -->
-    <div class="page" id="historyPage">
+    <!-- TEST SECTION -->
+    <div id="test-section" class="hidden">
       <div class="header">
-        <h1>📜 Email Sending History</h1>
-        <p>Track emails sent to users and managers</p>
+        <div class="header-title">
+          <h1>🧪 Test Email</h1>
+          <p>Send and test email functionality</p>
+        </div>
       </div>
 
-      <div class="card">
+      <div class="content-card">
         <div class="card-header">
-          <h2>Sending History</h2>
-          <button class="btn-refresh" onclick="loadEmailHistory()">🔄 Refresh</button>
+          <h2>Email Tests</h2>
         </div>
-        <div class="card-body">
-          <div id="historyContainer" class="loading"><div class="spinner"></div>Loading email history...</div>
+
+        <div style="padding: 20px;">
+          <div style="margin-bottom: 25px;">
+            <h4 style="color: #667eea; margin-bottom: 10px; font-size: 14px;">Configuration Check</h4>
+            <button class="btn btn-refresh" onclick="testDiagnostics()" style="background: #667eea; color: white;">Run Diagnostics</button>
+            <p id="diag-result" style="margin-top: 10px; color: #666; font-size: 13px;"></p>
+          </div>
+
+          <div style="margin-bottom: 25px; padding-top: 20px; border-top: 1px solid #f0f0f0;">
+            <h4 style="color: #667eea; margin-bottom: 10px; font-size: 14px;">Send Direct Test Email</h4>
+            <button class="btn btn-refresh" onclick="testDirectEmail()" style="background: #10b981; color: white;">Send Test Email</button>
+            <p id="email-result" style="margin-top: 10px; color: #666; font-size: 13px;"></p>
+          </div>
+
+          <div style="margin-bottom: 25px; padding-top: 20px; border-top: 1px solid #f0f0f0;">
+            <h4 style="color: #667eea; margin-bottom: 10px; font-size: 14px;">Send User Reminder</h4>
+            <button class="btn btn-refresh" onclick="testUserReminder()" style="background: #f59e0b; color: white;">Send Reminder</button>
+            <p id="reminder-result" style="margin-top: 10px; color: #666; font-size: 13px;"></p>
+          </div>
+
+          <div style="padding-top: 20px; border-top: 1px solid #f0f0f0;">
+            <h4 style="color: #667eea; margin-bottom: 10px; font-size: 14px;">Manager Alert</h4>
+            <button class="btn btn-refresh" onclick="testManagerAlert()" style="background: #ef4444; color: white;">Send Alert</button>
+            <p id="alert-result" style="margin-top: 10px; color: #666; font-size: 13px;"></p>
+          </div>
         </div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- EMAIL MODAL -->
-  <div class="modal-overlay" id="emailModal">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 id="modalSubject">—</h2>
-      </div>
-
-      <div class="modal-info">
-        <div class="modal-info-item">
-          <div class="modal-info-label">From</div>
-          <div class="modal-info-value" id="modalFrom">—</div>
-        </div>
-        <div class="modal-info-item">
-          <div class="modal-info-label">Email</div>
-          <div class="modal-info-value" id="modalEmail">—</div>
-        </div>
-        <div class="modal-info-item">
-          <div class="modal-info-label">Date</div>
-          <div class="modal-info-value" id="modalDate">—</div>
-        </div>
-        <div class="modal-info-item">
-          <div class="modal-info-label">Status</div>
-          <div id="statusBadge">—</div>
+<!-- EMAIL DETAIL MODAL -->
+<div id="emailModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Email Details</h2>
+      <button class="close-btn" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="email-row">
+        <div>
+          <span class="email-label">From</span>
+          <p class="email-value" id="modal-from"></p>
         </div>
       </div>
 
-      <h3 style="color: #666; font-size: 13px; margin-bottom: 10px;">📝 Message Content</h3>
-      <div class="modal-content" id="modalContent">Loading...</div>
+      <div class="email-row">
+        <div>
+          <span class="email-label">Subject</span>
+          <p class="email-value" id="modal-subject"></p>
+        </div>
+      </div>
 
-      <div class="modal-actions">
-        <button id="markRepliedBtn" onclick="markEmailReplied()">✅ Mark as Replied</button>
-        <button id="closeBtn" onclick="closeModal()">✕ Close</button>
+      <div class="email-row">
+        <div>
+          <span class="email-label">Date</span>
+          <p class="email-value" id="modal-date"></p>
+        </div>
+      </div>
+
+      <div class="email-row">
+        <div style="width: 100%;">
+          <span class="email-label">Content</span>
+          <div class="email-content-box" id="modal-content">Loading email content...</div>
+        </div>
       </div>
     </div>
+    <div class="modal-footer">
+      <button class="btn btn-success btn-small" onclick="updateEmailStatus('replied')">✅ Mark as Replied</button>
+      <button class="btn btn-warning btn-small" onclick="updateEmailStatus('no_reply_needed')">⊘ No Reply Needed</button>
+      <button class="btn btn-secondary btn-small" onclick="closeModal()">Close</button>
+    </div>
   </div>
+</div>
 
-  <script>
-    let currentEmail = null;
+<script>
+  let currentEmailId = null;
+  const API_BASE = window.location.origin;
 
-    // Switch between pages
-    function switchPage(page) {
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+  // Navigation
+  function showDashboard() {
+    hideAllSections();
+    document.getElementById('dashboard-section').classList.remove('hidden');
+    updateActiveNav(0);
+    loadStats();
+  }
 
-      if (page === 'dashboard') {
-        document.getElementById('dashboardPage').classList.add('active');
-        loadStats();
-      } else if (page === 'unreplied') {
-        document.getElementById('unrepliedPage').classList.add('active');
-        loadUnreplied();
-      } else if (page === 'all') {
-        document.getElementById('allPage').classList.add('active');
-        loadAllEmails();
-      } else if (page === 'test') {
-        document.getElementById('testPage').classList.add('active');
-      } else if (page === 'history') {
-        document.getElementById('historyPage').classList.add('active');
-        loadEmailHistory();
-      }
+  function showUnreplied() {
+    hideAllSections();
+    document.getElementById('unreplied-section').classList.remove('hidden');
+    updateActiveNav(1);
+    loadUnrepliedEmails();
+  }
 
-      event.target.classList.add('active');
+  function showAllEmails() {
+    hideAllSections();
+    document.getElementById('all-section').classList.remove('hidden');
+    updateActiveNav(2);
+    loadAllEmails();
+  }
+
+  function showTests() {
+    hideAllSections();
+    document.getElementById('test-section').classList.remove('hidden');
+    updateActiveNav(3);
+  }
+
+  function hideAllSections() {
+    document.getElementById('dashboard-section').classList.add('hidden');
+    document.getElementById('unreplied-section').classList.add('hidden');
+    document.getElementById('all-section').classList.add('hidden');
+    document.getElementById('test-section').classList.add('hidden');
+  }
+
+  function updateActiveNav(index) {
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-item')[index].classList.add('active');
+  }
+
+  // Load Stats
+  async function loadStats() {
+    try {
+      const res = await fetch(`${API_BASE}/api/stats`);
+      const data = await res.json();
+      document.getElementById('stat-total').textContent = data.total || 0;
+      document.getElementById('stat-unreplied').textContent = data.unreplied || 0;
+      document.getElementById('stat-replied').textContent = data.replied || 0;
+      document.getElementById('stat-today').textContent = data.today || 0;
+    } catch (error) {
+      console.error('Error loading stats:', error);
     }
+  }
 
-    // Logout
-    function logout() {
-      if (confirm('Are you sure you want to logout?')) {
-        window.location.href = '/?logout=true';
-      }
-    }
+  function refreshStats() {
+    loadStats();
+  }
 
-    // Load stats
-    async function loadStats() {
-      try {
-        const res = await fetch('/api/stats');
-        const data = await res.json();
+  // Format Date IST
+  function formatDateIST(dateString) {
+    return new Date(dateString).toLocaleString('en-IN', { 
+      hour12: false, 
+      timeZone: 'Asia/Kolkata' 
+    });
+  }
 
-        document.getElementById('totalStat').textContent = data.total || 0;
-        document.getElementById('unrepliedStat').textContent = data.unreplied || 0;
-        document.getElementById('repliedStat').textContent = data.replied || 0;
-        document.getElementById('todayStat').textContent = data.today || 0;
-        document.getElementById('refreshTime').textContent = `Last updated: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+  // Load Unreplied Emails
+  async function loadUnrepliedEmails() {
+    try {
+      const res = await fetch(`${API_BASE}/api/emails/unreplied`);
+      const data = await res.json();
+      const tbody = document.getElementById('unreplied-tbody');
 
-        const emailRes = await fetch('/api/emails?limit=20');
-        const emailData = await emailRes.json();
-        renderEmailTable(emailData.data || [], 'emailList');
-      } catch (error) {
-        console.error('[Dashboard] Error loading stats:', error);
-        document.getElementById('emailList').innerHTML = `<div style="color: #e74c3c;">Error: ${error.message}</div>`;
-      }
-    }
-
-    // Load unreplied emails
-    async function loadUnreplied() {
-      try {
-        const res = await fetch('/api/emails/unreplied?limit=100');
-        const data = await res.json();
-        renderEmailTable(data.data || [], 'unrepliedList');
-      } catch (error) {
-        console.error('[Dashboard] Error loading unreplied:', error);
-        document.getElementById('unrepliedList').innerHTML = `<div style="color: #e74c3c;">Error: ${error.message}</div>`;
-      }
-    }
-
-    // Load all emails
-    async function loadAllEmails() {
-      try {
-        const res = await fetch('/api/emails?limit=100');
-        const data = await res.json();
-        renderEmailTable(data.data || [], 'allEmailList');
-      } catch (error) {
-        console.error('[Dashboard] Error loading all emails:', error);
-        document.getElementById('allEmailList').innerHTML = `<div style="color: #e74c3c;">Error: ${error.message}</div>`;
-      }
-    }
-
-    // Render email table with clickable rows
-    function renderEmailTable(emails, containerId) {
-      if (!emails || emails.length === 0) {
-        document.getElementById(containerId).innerHTML = '<div style="text-align: center; padding: 40px; color: #888;">No emails found</div>';
+      if (!data.data || data.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><h3>No unreplied emails</h3><p>All caught up! 🎉</p></td></tr>';
         return;
       }
 
-      let html = '<table><thead><tr><th>From</th><th>Subject</th><th>Status</th><th>Date</th></tr></thead><tbody>';
-      
-      for (const email of emails) {
-        // ✅ FIXED: Use en-IN with 24-hour format (hour12: false)
-        const date = new Date(email.received_at).toLocaleString('en-IN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-          timeZone: 'Asia/Kolkata'
-        });
-        const status = email.status === 'unreplied' ? 'unreplied' : 'replied';
-        const statusText = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
-        
-        html += `
-          <tr class="clickable" onclick="openEmailModal(${JSON.stringify(email).replace(/"/g, '&quot;')})">
-            <td><strong>${email.sender_name || email.sender_email}</strong></td>
-            <td>${email.subject || '(No Subject)'}</td>
-            <td><span class="badge ${status}">${statusText}</span></td>
-            <td>${date}</td>
-          </tr>
-        `;
+      tbody.innerHTML = data.data.map(email => `
+        <tr onclick="openEmailModal('${email.id}', '${email.sender_name}', '${email.subject}', '${email.received_at}')">
+          <td><span class="sender-name">${email.sender_name}</span></td>
+          <td><span class="subject">${email.subject}</span></td>
+          <td><span class="badge badge-unreplied">Unreplied</span></td>
+          <td>${formatDateIST(email.received_at)}</td>
+        </tr>
+      `).join('');
+    } catch (error) {
+      console.error('Error loading unreplied emails:', error);
+    }
+  }
+
+  // Load All Emails
+  async function loadAllEmails() {
+    try {
+      const res = await fetch(`${API_BASE}/api/emails`);
+      const data = await res.json();
+      const tbody = document.getElementById('all-tbody');
+
+      if (!data.data || data.data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><h3>No emails</h3></td></tr>';
+        return;
       }
-      
-      html += '</tbody></table>';
-      document.getElementById(containerId).innerHTML = html;
+
+      tbody.innerHTML = data.data.map(email => `
+        <tr onclick="openEmailModal('${email.id}', '${email.sender_name}', '${email.subject}', '${email.received_at}')">
+          <td><span class="sender-name">${email.sender_name}</span></td>
+          <td><span class="subject">${email.subject}</span></td>
+          <td><span class="badge ${email.status === 'replied' ? 'badge-replied' : 'badge-unreplied'}">${email.status === 'replied' ? '✓ Replied' : '⚠ Unreplied'}</span></td>
+          <td>${formatDateIST(email.received_at)}</td>
+        </tr>
+      `).join('');
+    } catch (error) {
+      console.error('Error loading all emails:', error);
+    }
+  }
+
+  // Open Email Modal
+  async function openEmailModal(emailId, senderName, subject, receivedAt) {
+    currentEmailId = emailId;
+    document.getElementById('modal-from').textContent = senderName;
+    document.getElementById('modal-subject').textContent = subject;
+    document.getElementById('modal-date').textContent = formatDateIST(receivedAt);
+    document.getElementById('modal-content').textContent = 'Loading email content...';
+
+    try {
+      const res = await fetch(`${API_BASE}/api/emails/${emailId}/body`);
+      const data = await res.json();
+      document.getElementById('modal-content').textContent = data.body || 'No content available';
+    } catch (error) {
+      document.getElementById('modal-content').textContent = 'Error loading email content: ' + error.message;
     }
 
-    // Open email modal
-    async function openEmailModal(email) {
-      console.log('[Modal] Opening email:', email.id);
-      currentEmail = email;
+    document.getElementById('emailModal').classList.add('show');
+  }
 
-      document.getElementById('modalSubject').textContent = email.subject || '(No Subject)';
-      document.getElementById('modalFrom').textContent = email.sender_name || '—';
-      document.getElementById('modalEmail').textContent = email.sender_email || '—';
-      // ✅ FIXED: Use en-IN with 24-hour format (hour12: false)
-      document.getElementById('modalDate').textContent = new Date(email.received_at).toLocaleString('en-IN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-        timeZone: 'Asia/Kolkata'
+  // Close Modal
+  function closeModal() {
+    document.getElementById('emailModal').classList.remove('show');
+    currentEmailId = null;
+  }
+
+  // Update Email Status
+  async function updateEmailStatus(status) {
+    if (!currentEmailId) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/emails/${currentEmailId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
       });
-      document.getElementById('modalStatus').textContent = email.status === 'unreplied' ? 'Unreplied' : 'Replied';
 
-      const statusClass = email.status === 'unreplied' ? 'unreplied' : 'replied';
-      const statusText = email.status === 'unreplied' ? '⚠️ Unreplied' : '✅ Replied';
-      document.getElementById('statusBadge').innerHTML = `<div class="badge ${statusClass}" style="padding: 8px 15px; font-size: 12px;">${statusText}</div>`;
-
-      // Load email body
-      try {
-        const bodyRes = await fetch(`/api/emails/${email.id}/body`);
-        const bodyData = await bodyRes.json();
-        document.getElementById('modalContent').textContent = bodyData.body || 'No content available';
-      } catch (error) {
-        document.getElementById('modalContent').textContent = `Error loading content: ${error.message}`;
+      if (res.ok) {
+        alert(`✅ Email marked as ${status === 'replied' ? 'Replied' : 'No Reply Needed'}`);
+        closeModal();
+        loadUnrepliedEmails();
+        loadAllEmails();
+        loadStats();
       }
-
-      // Set button states
-      const markBtn = document.getElementById('markRepliedBtn');
-      if (email.status === 'replied') {
-        markBtn.textContent = '↩️ Mark as Unreplied';
-        markBtn.onclick = () => markEmailUnreplied();
-      } else {
-        markBtn.textContent = '✅ Mark as Replied';
-        markBtn.onclick = () => markEmailReplied();
-      }
-
-      document.getElementById('emailModal').classList.add('open');
+    } catch (error) {
+      alert('Error updating email: ' + error.message);
     }
+  }
 
-    // Close modal
-    function closeModal() {
-      document.getElementById('emailModal').classList.remove('open');
-      currentEmail = null;
+  // Test Functions
+  async function testDiagnostics() {
+    const resultEl = document.getElementById('diag-result');
+    resultEl.textContent = 'Running diagnostics...';
+    try {
+      const res = await fetch(`${API_BASE}/api/test/email-diagnostics`);
+      const data = await res.json();
+      resultEl.innerHTML = `<strong>${data.status}</strong>`;
+    } catch (error) {
+      resultEl.textContent = 'Error: ' + error.message;
     }
+  }
 
-    // Mark email as replied
-    async function markEmailReplied() {
-      if (!currentEmail || !currentEmail.id) {
-        alert('Error: Email information not found.');
-        return;
-      }
-      
-      try {
-        const res = await fetch(`/api/emails/${currentEmail.id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'replied' })
-        });
-
-        if (res.ok) {
-          closeModal();
-          loadStats();
-          alert('✅ Email marked as replied!');
-        } else {
-          alert('Error: Failed to update email');
-        }
-      } catch (error) {
-        alert('Error: ' + error.message);
-      }
+  async function testDirectEmail() {
+    const resultEl = document.getElementById('email-result');
+    resultEl.textContent = 'Sending test email...';
+    try {
+      const res = await fetch(`${API_BASE}/api/test/send-direct-email`);
+      const data = await res.json();
+      resultEl.innerHTML = `<strong>${data.success ? '✅ Email Sent' : '❌ Failed'}</strong><br>Status: ${data.statusCode}<br>${data.message}`;
+    } catch (error) {
+      resultEl.textContent = 'Error: ' + error.message;
     }
+  }
 
-    // Mark email as unreplied
-    async function markEmailUnreplied() {
-      if (!currentEmail || !currentEmail.id) {
-        alert('Error: Email information not found.');
-        return;
-      }
-      
-      try {
-        const res = await fetch(`/api/emails/${currentEmail.id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'unreplied' })
-        });
-
-        if (res.ok) {
-          closeModal();
-          loadStats();
-          alert('↩️ Email marked as unreplied!');
-        } else {
-          alert('Error: Failed to update email');
-        }
-      } catch (error) {
-        alert('Error: ' + error.message);
-      }
+  async function testUserReminder() {
+    const resultEl = document.getElementById('reminder-result');
+    resultEl.textContent = 'Sending reminder...';
+    try {
+      const res = await fetch(`${API_BASE}/api/test/send-user-reminder`);
+      const data = await res.json();
+      resultEl.innerHTML = `<strong>${data.success ? '✅ Reminder Sent' : '❌ Failed'}</strong><br>${data.message}`;
+    } catch (error) {
+      resultEl.textContent = 'Error: ' + error.message;
     }
+  }
 
-    // Test user reminder
-    async function testUserReminder() {
-      const msgEl = document.getElementById('testMessage');
-      msgEl.innerHTML = '<div class="alert alert-info">⏳ Sending reminder to user...</div>';
-
-      try {
-        const res = await fetch('/api/test/send-user-reminder');
-        const data = await res.json();
-
-        if (res.ok) {
-          msgEl.innerHTML = `
-            <div class="alert alert-success">
-              User reminder test completed.<br>
-              ${data.message || 'User reminder workflow completed.'}<br>
-              Recipient: <strong>kishor.merchant06@gmail.com</strong>
-            </div>
-          `;
-          setTimeout(loadEmailHistory, 1000);
-        } else {
-          msgEl.innerHTML = `<div class="alert alert-info">Error: ${data.message || data.error || 'Email failed'}</div>`;
-        }
-      } catch (error) {
-        msgEl.innerHTML = `<div class="alert alert-info">Error: ${error.message}</div>`;
-      }
+  async function testManagerAlert() {
+    const resultEl = document.getElementById('alert-result');
+    resultEl.textContent = 'Sending alert...';
+    try {
+      const res = await fetch(`${API_BASE}/api/test/check-user-reply-alert-manager`);
+      const data = await res.json();
+      resultEl.innerHTML = `<strong>${data.success ? '✅ Alert Sent' : '❌ Failed'}</strong><br>${data.message}`;
+    } catch (error) {
+      resultEl.textContent = 'Error: ' + error.message;
     }
+  }
 
-    // Test manager alert (check user reply)
-    async function testManagerAlert() {
-      const msgEl = document.getElementById('testMessage');
-      msgEl.innerHTML = '<div class="alert alert-info">⏳ Checking user reply and alerting manager...</div>';
-
-      try {
-        const res = await fetch('/api/test/check-user-reply-alert-manager');
-        const data = await res.json();
-
-        if (res.ok) {
-          msgEl.innerHTML = `
-            <div class="alert alert-success">
-              Manager alert test completed.<br>
-              ${data.message || 'Manager alert workflow completed.'}<br>
-              Recipient: <strong>marketing.kishorexports1@gmail.com</strong>
-            </div>
-          `;
-          setTimeout(loadEmailHistory, 1000);
-        } else {
-          msgEl.innerHTML = `<div class="alert alert-info">Error: ${data.message || data.error || 'Email failed'}</div>`;
-        }
-      } catch (error) {
-        msgEl.innerHTML = `<div class="alert alert-info">Error: ${error.message}</div>`;
-      }
+  // Close modal when clicking outside
+  window.onclick = function(event) {
+    const modal = document.getElementById('emailModal');
+    if (event.target === modal) {
+      closeModal();
     }
+  }
 
-    // Load email history
-    async function loadEmailHistory() {
-      const historyEl = document.getElementById('historyContainer');
-      historyEl.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
+  // Load dashboard on page load
+  window.onload = function() {
+    showDashboard();
+  }
+</script>
 
-      try {
-        const res = await fetch('/api/email-history');
-        const data = await res.json();
-
-        if (!data.logs || data.logs.length === 0) {
-          historyEl.innerHTML = '<div style="text-align: center; padding: 40px; color: #888;">No email sending history yet.</div>';
-          return;
-        }
-
-        let html = `<p style="margin-bottom: 15px; color: #666;">Total emails sent: <strong>${data.total}</strong></p>`;
-        html += '<table><thead><tr><th>Type</th><th>Date & Time</th><th>Recipients</th><th>Count</th></tr></thead><tbody>';
-
-        for (const log of data.logs) {
-          // ✅ FIXED: Use en-IN with 24-hour format (hour12: false)
-          const date = new Date(log.sent_at).toLocaleString('en-IN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-            timeZone: 'Asia/Kolkata'
-          });
-
-          const type = log.reminder_type === 'manager_notification' 
-            ? '<span class="badge badge-manager">Manager Alert</span>'
-            : '<span class="badge badge-sender">Sender Reminder</span>';
-
-          const recipients = log.recipients || '(Multiple)';
-          const count = log.email_count || 'N/A';
-
-          html += `
-            <tr>
-              <td>${type}</td>
-              <td>${date}</td>
-              <td>${recipients}</td>
-              <td>${count}</td>
-            </tr>
-          `;
-        }
-
-        html += '</tbody></table>';
-        historyEl.innerHTML = html;
-      } catch (error) {
-        historyEl.innerHTML = `<div class="alert alert-info">Error loading history: ${error.message}</div>`;
-      }
-    }
-
-    // Auto-load on page load
-    window.addEventListener('load', function() {
-      console.log('[Dashboard] Window loaded');
-      loadStats();
-      
-      // Auto-refresh every 5 minutes
-      setInterval(loadStats, 5 * 60 * 1000);
-    });
-
-    // Close modal on Escape key
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeModal();
-    });
-  </script>
 </body>
 </html>
